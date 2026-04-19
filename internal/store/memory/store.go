@@ -72,6 +72,33 @@ func (s *Store) Enqueue(_ context.Context, channelID, trackID string, enqueuedAt
 	return item, nil
 }
 
+func (s *Store) RemoveQueueItem(_ context.Context, channelID, queueItemID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	state, ok := s.channels[channelID]
+	if !ok {
+		return errors.New("channel not found")
+	}
+
+	filtered := make([]domain.QueueItem, 0, len(state.Queue))
+	removed := false
+	for _, item := range state.Queue {
+		if item.ID == queueItemID {
+			removed = true
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	if !removed {
+		return errors.New("queue item not found")
+	}
+
+	state.Queue = filtered
+	s.channels[channelID] = cloneState(state)
+	return nil
+}
+
 func cloneState(state store.ChannelState) store.ChannelState {
 	clonedPlaylist := append([]string(nil), state.PlaylistTrackIDs...)
 	clonedQueue := append([]domain.QueueItem(nil), state.Queue...)

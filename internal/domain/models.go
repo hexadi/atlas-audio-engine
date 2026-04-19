@@ -65,6 +65,22 @@ type PlayheadState struct {
 	SourceType SourceType `json:"source_type"`
 }
 
+type NextTrack struct {
+	TrackID    string     `json:"track_id"`
+	Title      string     `json:"title"`
+	Artist     string     `json:"artist"`
+	Album      string     `json:"album,omitempty"`
+	DurationMs int64      `json:"duration_ms"`
+	SourceType SourceType `json:"source_type"`
+}
+
+type ChannelStateSnapshot struct {
+	ChannelID  string       `json:"channel_id"`
+	NowPlaying PlayheadState `json:"now_playing"`
+	Queue      []QueueEntry `json:"queue"`
+	NextTrack  *NextTrack   `json:"next_track,omitempty"`
+}
+
 type ScheduleBlock struct {
 	ID        string    `json:"id"`
 	ChannelID string    `json:"channel_id"`

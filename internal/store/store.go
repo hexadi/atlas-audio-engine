@@ -18,4 +18,5 @@ type Store interface {
 	GetChannelState(ctx context.Context, channelID string) (ChannelState, error)
 	UpsertChannelState(ctx context.Context, state ChannelState) error
 	Enqueue(ctx context.Context, channelID, trackID string, enqueuedAt time.Time) (domain.QueueItem, error)
+	RemoveQueueItem(ctx context.Context, channelID, queueItemID string) error
 }

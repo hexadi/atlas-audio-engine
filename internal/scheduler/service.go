@@ -90,8 +90,134 @@ func (s *Service) Enqueue(ctx context.Context, channelID, trackID string) (domai
 	return s.store.Enqueue(ctx, channelID, trackID, s.clock())
 }
 
+func (s *Service) RemoveQueueItem(ctx context.Context, channelID, queueItemID string) error {
+	return s.store.RemoveQueueItem(ctx, channelID, queueItemID)
+}
+
+func (s *Service) MoveQueueItem(ctx context.Context, channelID, queueItemID string, position int) ([]domain.QueueEntry, error) {
+	state, err := s.store.GetChannelState(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+	if len(state.Queue) == 0 {
+		return nil, errors.New("queue is empty")
+	}
+
+	currentIndex := -1
+	for index, item := range state.Queue {
+		if item.ID == queueItemID {
+			currentIndex = index
+			break
+		}
+	}
+	if currentIndex == -1 {
+		return nil, errors.New("queue item not found")
+	}
+
+	targetIndex := position - 1
+	if targetIndex >= len(state.Queue) {
+		targetIndex = len(state.Queue) - 1
+	}
+
+	item := state.Queue[currentIndex]
+	reordered := append([]domain.QueueItem(nil), state.Queue[:currentIndex]...)
+	reordered = append(reordered, state.Queue[currentIndex+1:]...)
+
+	if targetIndex > len(reordered) {
+		targetIndex = len(reordered)
+	}
+
+	reordered = append(reordered[:targetIndex], append([]domain.QueueItem{item}, reordered[targetIndex:]...)...)
+	state.Queue = reordered
+
+	if err := s.store.UpsertChannelState(ctx, state); err != nil {
+		return nil, err
+	}
+	return s.Queue(ctx, channelID)
+}
+
+func (s *Service) Skip(ctx context.Context, channelID string) (domain.PlayheadState, error) {
+	state, err := s.store.GetChannelState(ctx, channelID)
+	if err != nil {
+		return domain.PlayheadState{}, err
+	}
+	if len(state.PlaylistTrackIDs) == 0 {
+		return domain.PlayheadState{}, errors.New("channel playlist is empty")
+	}
+
+	nextTrackID, nextCursor, queue := s.pickNext(state)
+	if nextTrackID == "" {
+		return domain.PlayheadState{}, errors.New("no next track available")
+	}
+
+	nextTrack, err := s.source.GetTrack(ctx, nextTrackID)
+	if err != nil {
+		return domain.PlayheadState{}, err
+	}
+	if nextTrack.DurationMs <= 0 {
+		return domain.PlayheadState{}, errors.New("next track has invalid duration")
+	}
+
+	now := s.clock()
+	state.Channel.CurrentTrackID = nextTrackID
+	state.Channel.StartedAt = now
+	state.Channel.PlaylistCursor = nextCursor
+	state.Queue = queue
+
+	if err := s.store.UpsertChannelState(ctx, state); err != nil {
+		return domain.PlayheadState{}, err
+	}
+
+	return domain.PlayheadState{
+		ChannelID:  channelID,
+		TrackID:    nextTrack.ID,
+		Title:      nextTrack.Title,
+		Artist:     nextTrack.Artist,
+		DurationMs: nextTrack.DurationMs,
+		ElapsedMs:  0,
+		StartedAt:  now,
+		SourceType: nextTrack.SourceType,
+	}, nil
+}
+
 func (s *Service) CurrentNow(ctx context.Context, channelID string) (domain.PlayheadState, error) {
 	return s.Current(ctx, channelID, s.clock())
+}
+
+func (s *Service) State(ctx context.Context, channelID string) (domain.ChannelStateSnapshot, error) {
+	nowPlaying, err := s.CurrentNow(ctx, channelID)
+	if err != nil {
+		return domain.ChannelStateSnapshot{}, err
+	}
+
+	queue, err := s.Queue(ctx, channelID)
+	if err != nil {
+		return domain.ChannelStateSnapshot{}, err
+	}
+
+	nextTrack, err := s.Next(ctx, channelID, nowPlaying.TrackID)
+	if err != nil {
+		return domain.ChannelStateSnapshot{}, err
+	}
+
+	var next *domain.NextTrack
+	if nextTrack != nil {
+		next = &domain.NextTrack{
+			TrackID:    nextTrack.ID,
+			Title:      nextTrack.Title,
+			Artist:     nextTrack.Artist,
+			Album:      nextTrack.Album,
+			DurationMs: nextTrack.DurationMs,
+			SourceType: nextTrack.SourceType,
+		}
+	}
+
+	return domain.ChannelStateSnapshot{
+		ChannelID:  channelID,
+		NowPlaying: nowPlaying,
+		Queue:      queue,
+		NextTrack:  next,
+	}, nil
 }
 
 func (s *Service) Current(ctx context.Context, channelID string, at time.Time) (domain.PlayheadState, error) {

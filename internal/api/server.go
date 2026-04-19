@@ -16,12 +16,17 @@ func NewServer(service *scheduler.Service) *echo.Echo {
 
 	handler := &Handler{service: service}
 
+	e.GET("/", handler.Home)
 	e.GET("/health", handler.Health)
 	e.GET("/channels", handler.ListChannels)
+	e.GET("/channels/:id/state", handler.State)
 	e.GET("/channels/:id/tracks", handler.Tracks)
 	e.GET("/channels/:id/now-playing", handler.NowPlaying)
 	e.GET("/channels/:id/queue", handler.Queue)
 	e.POST("/channels/:id/queue", handler.Enqueue)
+	e.DELETE("/channels/:id/queue/:queueItemId", handler.RemoveQueueItem)
+	e.POST("/channels/:id/queue/:queueItemId/move", handler.MoveQueueItem)
+	e.POST("/channels/:id/skip", handler.Skip)
 
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
 		if c.Response().Committed {

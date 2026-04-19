@@ -203,6 +203,25 @@ func (s *Store) Enqueue(ctx context.Context, channelID, trackID string, enqueued
 	return item, nil
 }
 
+func (s *Store) RemoveQueueItem(ctx context.Context, channelID, queueItemID string) error {
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM queue_items
+		WHERE id = ? AND channel_id = ?
+	`, queueItemID, channelID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return errors.New("queue item not found")
+	}
+	return nil
+}
+
 func (s *Store) ensureSchema() error {
 	_, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS channels (

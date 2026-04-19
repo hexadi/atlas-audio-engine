@@ -8,6 +8,7 @@ This first implementation focuses on a thin vertical slice:
 - canonical track/channel/playhead models
 - a deterministic scheduler with queue priority at track boundaries
 - an HTTP API for health, channels, now-playing, and queue control
+- a built-in homepage for now playing, progress, and next song
 
 ## Current MVP
 
@@ -54,14 +55,20 @@ If a repo-local `.env` file exists, the app loads it automatically before applyi
 
 ## API
 
+- `GET /` homepage with now playing, progress bar, and next song
 - `GET /health`
 - `GET /channels`
 - `GET /channels/:id/tracks`
+- `GET /channels/:id/state`
 - `GET /channels/:id/now-playing`
 - `GET /channels/:id/queue`
 - `POST /channels/:id/queue`
+- `DELETE /channels/:id/queue/:queueItemId`
+- `POST /channels/:id/queue/:queueItemId/move`
+- `POST /channels/:id/skip`
 
 `GET /channels/:id/queue` returns enriched queue entries with track metadata and queue position, not just raw track ids.
+`GET /channels/:id/state` returns a single operator snapshot with `now_playing`, `queue`, and `next_track`.
 
 Example queue request:
 

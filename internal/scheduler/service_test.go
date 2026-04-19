@@ -80,6 +80,55 @@ func TestCurrentCalculatesElapsedTime(t *testing.T) {
 	}
 }
 
+func TestSkipAdvancesToQueuedTrackImmediately(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 19, 12, 0, 30, 0, time.UTC)
+	service := newTestService(t, now)
+
+	if _, err := service.Enqueue(context.Background(), "channel-1", "track-3"); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+
+	playhead, err := service.Skip(context.Background(), "channel-1")
+	if err != nil {
+		t.Fatalf("skip: %v", err)
+	}
+	if playhead.TrackID != "track-3" {
+		t.Fatalf("expected queued track after skip, got %s", playhead.TrackID)
+	}
+	if playhead.ElapsedMs != 0 {
+		t.Fatalf("expected elapsed to reset after skip, got %d", playhead.ElapsedMs)
+	}
+}
+
+func TestMoveQueueItemReordersEntries(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 19, 12, 0, 30, 0, time.UTC)
+	service := newTestService(t, now)
+
+	if _, err := service.Enqueue(context.Background(), "channel-1", "track-3"); err != nil {
+		t.Fatalf("enqueue first: %v", err)
+	}
+	if _, err := service.Enqueue(context.Background(), "channel-1", "track-4"); err != nil {
+		t.Fatalf("enqueue second: %v", err)
+	}
+
+	queue, err := service.Queue(context.Background(), "channel-1")
+	if err != nil {
+		t.Fatalf("queue: %v", err)
+	}
+
+	moved, err := service.MoveQueueItem(context.Background(), "channel-1", queue[1].ID, 1)
+	if err != nil {
+		t.Fatalf("move queue item: %v", err)
+	}
+	if moved[0].TrackID != "track-4" || moved[1].TrackID != "track-3" {
+		t.Fatalf("expected queue order [track-4, track-3], got %#v", moved)
+	}
+}
+
 func newTestService(t *testing.T, now time.Time) *Service {
 	t.Helper()
 
@@ -104,6 +153,7 @@ func newTestService(t *testing.T, now time.Time) *Service {
 			"track-1": {ID: "track-1", Title: "Track One", Artist: "Artist", DurationMs: 60000, SourceType: domain.SourceTypeLocal},
 			"track-2": {ID: "track-2", Title: "Track Two", Artist: "Artist", DurationMs: 60000, SourceType: domain.SourceTypeLocal},
 			"track-3": {ID: "track-3", Title: "Queued", Artist: "Artist", DurationMs: 60000, SourceType: domain.SourceTypeLocal},
+			"track-4": {ID: "track-4", Title: "Queued Again", Artist: "Artist", DurationMs: 60000, SourceType: domain.SourceTypeLocal},
 		},
 	}
 
