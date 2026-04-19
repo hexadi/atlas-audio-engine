@@ -81,6 +81,25 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 		t.Fatalf("expected seeded track, got %s", playhead.TrackID)
 	}
 
+	tracksRecorder := httptest.NewRecorder()
+	tracksRequest := httptest.NewRequest(http.MethodGet, "/channels/channel-1/tracks", nil)
+	server.ServeHTTP(tracksRecorder, tracksRequest)
+
+	if tracksRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from tracks, got %d", tracksRecorder.Code)
+	}
+
+	var tracks []domain.Track
+	if err := json.Unmarshal(tracksRecorder.Body.Bytes(), &tracks); err != nil {
+		t.Fatalf("unmarshal tracks: %v", err)
+	}
+	if len(tracks) != 2 {
+		t.Fatalf("expected 2 channel tracks, got %d", len(tracks))
+	}
+	if tracks[0].ID != "track-1" || tracks[1].ID != "track-2" {
+		t.Fatalf("expected playlist order to be preserved, got %#v", tracks)
+	}
+
 	body, _ := json.Marshal(map[string]string{"track_id": "track-3"})
 	queueRecorder := httptest.NewRecorder()
 	queueRequest := httptest.NewRequest(http.MethodPost, "/channels/channel-1/queue", bytes.NewReader(body))
@@ -89,6 +108,28 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 
 	if queueRecorder.Code != http.StatusCreated {
 		t.Fatalf("expected 201 from queue create, got %d", queueRecorder.Code)
+	}
+
+	queueListRecorder := httptest.NewRecorder()
+	queueListRequest := httptest.NewRequest(http.MethodGet, "/channels/channel-1/queue", nil)
+	server.ServeHTTP(queueListRecorder, queueListRequest)
+
+	if queueListRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from queue list, got %d", queueListRecorder.Code)
+	}
+
+	var queueEntries []domain.QueueEntry
+	if err := json.Unmarshal(queueListRecorder.Body.Bytes(), &queueEntries); err != nil {
+		t.Fatalf("unmarshal queue entries: %v", err)
+	}
+	if len(queueEntries) != 1 {
+		t.Fatalf("expected 1 queue entry, got %d", len(queueEntries))
+	}
+	if queueEntries[0].TrackID != "track-3" || queueEntries[0].Title != "Queued" {
+		t.Fatalf("expected queue entry track metadata, got %#v", queueEntries[0])
+	}
+	if queueEntries[0].Position != 1 {
+		t.Fatalf("expected queue position 1, got %d", queueEntries[0].Position)
 	}
 
 	service = scheduler.NewServiceWithClock(repository, library, func() time.Time { return now.Add(1100 * time.Millisecond) })

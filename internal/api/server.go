@@ -18,6 +18,7 @@ func NewServer(service *scheduler.Service) *echo.Echo {
 
 	e.GET("/health", handler.Health)
 	e.GET("/channels", handler.ListChannels)
+	e.GET("/channels/:id/tracks", handler.Tracks)
 	e.GET("/channels/:id/now-playing", handler.NowPlaying)
 	e.GET("/channels/:id/queue", handler.Queue)
 	e.POST("/channels/:id/queue", handler.Enqueue)

@@ -41,6 +41,19 @@ type QueueItem struct {
 	EnqueuedAt time.Time `json:"enqueued_at"`
 }
 
+type QueueEntry struct {
+	ID         string     `json:"id"`
+	ChannelID  string     `json:"channel_id"`
+	TrackID    string     `json:"track_id"`
+	EnqueuedAt time.Time  `json:"enqueued_at"`
+	Position   int        `json:"position"`
+	Title      string     `json:"title"`
+	Artist     string     `json:"artist"`
+	Album      string     `json:"album,omitempty"`
+	DurationMs int64      `json:"duration_ms"`
+	SourceType SourceType `json:"source_type"`
+}
+
 type PlayheadState struct {
 	ChannelID  string     `json:"channel_id"`
 	TrackID    string     `json:"track_id"`

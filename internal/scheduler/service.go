@@ -38,12 +38,49 @@ func (s *Service) ListChannels(ctx context.Context) ([]domain.Channel, error) {
 	return s.store.ListChannels(ctx)
 }
 
-func (s *Service) Queue(ctx context.Context, channelID string) ([]domain.QueueItem, error) {
+func (s *Service) Queue(ctx context.Context, channelID string) ([]domain.QueueEntry, error) {
 	state, err := s.store.GetChannelState(ctx, channelID)
 	if err != nil {
 		return nil, err
 	}
-	return state.Queue, nil
+
+	entries := make([]domain.QueueEntry, 0, len(state.Queue))
+	for index, item := range state.Queue {
+		track, err := s.source.GetTrack(ctx, item.TrackID)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, domain.QueueEntry{
+			ID:         item.ID,
+			ChannelID:  item.ChannelID,
+			TrackID:    item.TrackID,
+			EnqueuedAt: item.EnqueuedAt,
+			Position:   index + 1,
+			Title:      track.Title,
+			Artist:     track.Artist,
+			Album:      track.Album,
+			DurationMs: track.DurationMs,
+			SourceType: track.SourceType,
+		})
+	}
+	return entries, nil
+}
+
+func (s *Service) Tracks(ctx context.Context, channelID string) ([]domain.Track, error) {
+	state, err := s.store.GetChannelState(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+
+	tracks := make([]domain.Track, 0, len(state.PlaylistTrackIDs))
+	for _, trackID := range state.PlaylistTrackIDs {
+		track, err := s.source.GetTrack(ctx, trackID)
+		if err != nil {
+			return nil, err
+		}
+		tracks = append(tracks, track)
+	}
+	return tracks, nil
 }
 
 func (s *Service) Enqueue(ctx context.Context, channelID, trackID string) (domain.QueueItem, error) {

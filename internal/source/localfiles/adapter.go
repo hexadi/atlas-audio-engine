@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/homepc/atlas-audio-engine/internal/domain"
 	"github.com/homepc/atlas-audio-engine/internal/source"
@@ -37,6 +38,11 @@ type Prober interface {
 type Adapter struct {
 	root   string
 	prober Prober
+
+	mu      sync.RWMutex
+	tracks  []domain.Track
+	byID    map[string]domain.Track
+	scanned bool
 }
 
 func NewAdapter(root string, prober Prober) *Adapter {
@@ -47,6 +53,10 @@ func NewAdapter(root string, prober Prober) *Adapter {
 }
 
 func (a *Adapter) ListTracks(ctx context.Context) ([]domain.Track, error) {
+	if tracks, ok := a.cachedTracks(); ok {
+		return tracks, nil
+	}
+
 	var tracks []domain.Track
 
 	err := filepath.WalkDir(a.root, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -81,10 +91,16 @@ func (a *Adapter) ListTracks(ctx context.Context) ([]domain.Track, error) {
 	if len(tracks) == 0 {
 		return nil, errors.New("no playable local tracks found")
 	}
+
+	a.storeCache(tracks)
 	return tracks, nil
 }
 
 func (a *Adapter) GetTrack(ctx context.Context, id string) (domain.Track, error) {
+	if track, ok := a.cachedTrack(id); ok {
+		return track, nil
+	}
+
 	tracks, err := a.ListTracks(ctx)
 	if err != nil {
 		return domain.Track{}, err
@@ -180,4 +196,37 @@ func isNumericPrefix(value string) bool {
 		}
 	}
 	return true
+}
+
+func (a *Adapter) cachedTracks() ([]domain.Track, bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if !a.scanned || len(a.tracks) == 0 {
+		return nil, false
+	}
+	return append([]domain.Track(nil), a.tracks...), true
+}
+
+func (a *Adapter) cachedTrack(id string) (domain.Track, bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if !a.scanned || a.byID == nil {
+		return domain.Track{}, false
+	}
+	track, ok := a.byID[id]
+	return track, ok
+}
+
+func (a *Adapter) storeCache(tracks []domain.Track) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.tracks = append([]domain.Track(nil), tracks...)
+	a.byID = make(map[string]domain.Track, len(tracks))
+	for _, track := range tracks {
+		a.byID[track.ID] = track
+	}
+	a.scanned = true
 }

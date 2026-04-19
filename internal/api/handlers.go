@@ -28,6 +28,14 @@ func (h *Handler) ListChannels(c echo.Context) error {
 	return c.JSON(http.StatusOK, channels)
 }
 
+func (h *Handler) Tracks(c echo.Context) error {
+	tracks, err := h.service.Tracks(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, tracks)
+}
+
 func (h *Handler) NowPlaying(c echo.Context) error {
 	playhead, err := h.service.CurrentNow(c.Request().Context(), c.Param("id"))
 	if err != nil {

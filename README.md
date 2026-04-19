@@ -56,9 +56,12 @@ If a repo-local `.env` file exists, the app loads it automatically before applyi
 
 - `GET /health`
 - `GET /channels`
+- `GET /channels/:id/tracks`
 - `GET /channels/:id/now-playing`
 - `GET /channels/:id/queue`
 - `POST /channels/:id/queue`
+
+`GET /channels/:id/queue` returns enriched queue entries with track metadata and queue position, not just raw track ids.
 
 Example queue request:
 
