@@ -119,12 +119,17 @@ func (a *Adapter) buildTrack(ctx context.Context, path string) (domain.Track, er
 		return domain.Track{}, err
 	}
 
+	fallbackArtist, fallbackTitle := parseFilenameMetadata(absolutePath)
+
 	title := metadata.Title
 	if title == "" {
-		title = strings.TrimSuffix(filepath.Base(absolutePath), filepath.Ext(absolutePath))
+		title = fallbackTitle
 	}
 
 	artist := metadata.Artist
+	if artist == "" {
+		artist = fallbackArtist
+	}
 	if artist == "" {
 		artist = "Unknown Artist"
 	}
@@ -143,4 +148,36 @@ func (a *Adapter) buildTrack(ctx context.Context, path string) (domain.Track, er
 func stableID(value string) string {
 	sum := sha1.Sum([]byte(value))
 	return hex.EncodeToString(sum[:])
+}
+
+func parseFilenameMetadata(path string) (artist string, title string) {
+	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	parts := strings.Split(base, " - ")
+
+	switch len(parts) {
+	case 0:
+		return "", base
+	case 1:
+		return "", parts[0]
+	case 2:
+		return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+	default:
+		possibleTrackNumber := strings.TrimSpace(parts[0])
+		if isNumericPrefix(possibleTrackNumber) {
+			return strings.TrimSpace(parts[1]), strings.TrimSpace(strings.Join(parts[2:], " - "))
+		}
+		return strings.TrimSpace(parts[0]), strings.TrimSpace(strings.Join(parts[1:], " - "))
+	}
+}
+
+func isNumericPrefix(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

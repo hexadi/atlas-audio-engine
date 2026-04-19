@@ -68,3 +68,39 @@ func TestListTracksNormalizesLocalFiles(t *testing.T) {
 		t.Fatalf("expected stable id to be generated")
 	}
 }
+
+func TestListTracksFallsBackToFilenameMetadata(t *testing.T) {
+	t.Parallel()
+
+	mediaDir := t.TempDir()
+	songPath := filepath.Join(mediaDir, "01 - Jetset'er - Oh Baby.flac")
+	if err := os.WriteFile(songPath, []byte("not-real-audio"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+
+	absolutePath, err := filepath.Abs(songPath)
+	if err != nil {
+		t.Fatalf("abs: %v", err)
+	}
+
+	adapter := NewAdapter(mediaDir, fakeProber{
+		metadataByPath: map[string]Metadata{
+			absolutePath: {
+				DurationMs: 215000,
+			},
+		},
+	})
+
+	tracks, err := adapter.ListTracks(context.Background())
+	if err != nil {
+		t.Fatalf("list tracks: %v", err)
+	}
+
+	track := tracks[0]
+	if track.Artist != "Jetset'er" {
+		t.Fatalf("expected filename artist fallback, got %q", track.Artist)
+	}
+	if track.Title != "Oh Baby" {
+		t.Fatalf("expected filename title fallback, got %q", track.Title)
+	}
+}
