@@ -50,6 +50,7 @@ Set these environment variables as needed:
 - `ATLAS_CHANNEL_NAME` default `Local Library`
 
 `ffprobe` must be available on the system path because the local source adapter uses it to read duration and tags.
+If a repo-local `.env` file exists, the app loads it automatically before applying defaults. Existing shell environment variables still take precedence.
 
 ## API
 
@@ -72,6 +73,12 @@ Example queue request:
 ```bash
 go mod tidy
 go test ./...
+go run ./cmd/atlas-audio-engine
+```
+
+For local development on Windows PowerShell, copy `.env.example` to `.env`, update `ATLAS_MEDIA_DIR`, and then run:
+
+```powershell
 go run ./cmd/atlas-audio-engine
 ```
 

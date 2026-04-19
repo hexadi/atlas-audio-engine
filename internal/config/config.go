@@ -1,6 +1,10 @@
 package config
 
-import "os"
+import (
+	"bufio"
+	"os"
+	"strings"
+)
 
 type Config struct {
 	ListenAddress string
@@ -11,6 +15,8 @@ type Config struct {
 }
 
 func Load() Config {
+	loadDotEnv(".env")
+
 	return Config{
 		ListenAddress: getEnv("ATLAS_LISTEN_ADDR", ":8080"),
 		DatabasePath:  getEnv("ATLAS_DATABASE_PATH", "atlas.db"),
@@ -25,4 +31,34 @@ func getEnv(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func loadDotEnv(path string) {
+	file, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+
+		key = strings.TrimSpace(key)
+		if key == "" || os.Getenv(key) != "" {
+			continue
+		}
+
+		value = strings.TrimSpace(value)
+		value = strings.Trim(value, `"'`)
+		_ = os.Setenv(key, value)
+	}
 }
