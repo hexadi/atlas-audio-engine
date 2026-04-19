@@ -1,0 +1,5 @@
+atlas.db
+bin/
+dist/
+.env
+.gocache/

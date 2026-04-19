@@ -1,114 +1,89 @@
 # Atlas Audio Engine
 
-🚧 **Work in progress**
+Atlas Audio Engine is a Go-based radio automation backend for always-on music channels with deterministic playhead state and operator queue control.
 
-Atlas Audio Engine is a modern radio automation platform designed to run always-on music channels with synchronized visual metadata.
+This first implementation focuses on a thin vertical slice:
 
-Inspired by the **dizqueTV** architecture, Atlas Audio Engine brings live-channel concepts to music broadcasting with multi-source ingestion, smart scheduling, and real-time display overlays.
+- local-file ingestion
+- canonical track/channel/playhead models
+- a deterministic scheduler with queue priority at track boundaries
+- an HTTP API for health, channels, now-playing, and queue control
 
----
+## Current MVP
 
-## Vision
+The current backend proves the core loop:
 
-Atlas Audio Engine aims to create a true "continuous station" experience:
+`local media -> normalized tracks -> channel playlist -> scheduler -> playhead state -> HTTP API`
 
-- 🎵 **Audio playback from multiple sources**
-  - Local media libraries
-  - Jellyfin
-  - etc.
-- 🎨 **Real-time visual output**
-  - Album artwork
-  - Artist and track metadata overlays
-- 📻 **24/7 channel-style programming**
-  - Music playlists behave like live broadcast channels
-- 🎲 **Flexible scheduling modes**
-  - Automatic/randomized scheduling
-  - Manual/curator-defined sequencing
-- 🎚️ **Live control features**
-  - Queue jumps
-  - Manual override during broadcast
+Phase 1 intentionally does not include:
 
----
+- Jellyfin or Spotify integrations
+- HLS/RTMP output
+- overlay rendering
+- WebSocket live updates
+- operator dashboard UI
 
-## Core Features (Planned)
+## Project Layout
 
-### 1. Multi-Source Music Ingestion
-- Unified track model across streaming and local sources
-- Metadata normalization (artist, album, title, duration, artwork)
-- Source priority and fallback behavior
+```text
+cmd/atlas-audio-engine     application entrypoint
+internal/api               Echo HTTP handlers
+internal/bootstrap         startup seeding for the first local channel
+internal/config            environment-driven configuration
+internal/domain            core types
+internal/scheduler         playhead and next-track logic
+internal/source            source interfaces
+internal/source/localfiles local-media adapter and ffprobe probing
+internal/store             storage interfaces
+internal/store/sqlite      SQLite-backed persistence
+internal/store/memory      in-memory test store
+```
 
-### 2. Channel-Based Playback Engine
-- Continuous channel timelines (similar to linear TV channels)
-- Persistent "what should be playing now" state
-- Seamless transition between tracks and scheduled blocks
+## Configuration
 
-### 3. Intelligent Scheduler
-- Rule-based and random block generation
-- Time-slot programming (genre, mood, era, curator themes)
-- Recurrence patterns (daily, weekly, event-based)
+Set these environment variables as needed:
 
-### 4. Broadcast Visual Layer
-- Dynamic rendering of now-playing information
-- Artwork and branding overlays
-- Output suitable for livestream platforms (e.g., RTMP pipelines)
+- `ATLAS_LISTEN_ADDR` default `:8080`
+- `ATLAS_DATABASE_PATH` default `atlas.db`
+- `ATLAS_MEDIA_DIR` default `./testdata/media`
+- `ATLAS_CHANNEL_ID` default `local-library`
+- `ATLAS_CHANNEL_NAME` default `Local Library`
 
-### 5. Live Operations Console
-- Monitor active channel state
-- Force-next / skip / inject track
-- Emergency fallback playlist control
+`ffprobe` must be available on the system path because the local source adapter uses it to read duration and tags.
 
----
+## API
 
-## Architecture Direction
+- `GET /health`
+- `GET /channels`
+- `GET /channels/:id/now-playing`
+- `GET /channels/:id/queue`
+- `POST /channels/:id/queue`
 
-Atlas Audio Engine follows a modular architecture:
+Example queue request:
 
-- **Source Connectors**: adapters for local media libraries, Jellyfin, and additional providers
-- **Metadata Service**: canonical metadata + enrichment
-- **Scheduling Service**: channel timeline generation and update logic
-- **Playback Orchestrator**: resolves current playhead and emits playback instructions
-- **Visual Composer**: generates synchronized video/overlay output
-- **Control API/UI**: tools for operators and curators
+```json
+{
+  "track_id": "your-track-id"
+}
+```
 
----
+## Running
 
-## Use Cases
+```bash
+go mod tidy
+go test ./...
+go run ./cmd/atlas-audio-engine
+```
 
-- Internet radio stations with branded visual streams
-- Community or hobby broadcasters wanting TV-like music channels
-- Curator-driven channels with occasional automation
-- Hands-off ambient channels with intelligent randomization
+Before starting the server, place supported audio files under the media directory referenced by `ATLAS_MEDIA_DIR`.
+Using `testdata/media` keeps Go tooling happy; a repo-root `media/` folder can interfere with `go test ./...` when it contains artist or album directories with characters that are invalid in Go import paths.
 
----
+## Roadmap
 
-## Status
-
-🚧 **Early project stage** — architecture and implementation roadmap are in progress.
-
-If you want to contribute, start by proposing:
-- source adapter interfaces,
-- scheduler rule schemas,
-- playback state models,
-- overlay rendering approaches.
-
----
-
-## Roadmap (High-Level)
-
-- [ ] Define core domain model (Track, Channel, ScheduleBlock, Playhead)
-- [ ] Implement local-file source adapter
-- [ ] Implement first scheduler prototype
-- [ ] Implement now-playing state service
-- [ ] Add overlay renderer for artwork + metadata
-- [ ] Add operator controls for manual override
-
----
-
-## Inspiration
-
-This project is conceptually inspired by **dizqueTV** and its channel/scheduling paradigm, adapted for a music-first radio automation workflow.
-
----
+- Add more source adapters
+- Extend scheduler rules beyond a single seeded playlist
+- Add broadcast output and visual composition
+- Add live operator workflows and richer playback controls
 
 ## License
 
