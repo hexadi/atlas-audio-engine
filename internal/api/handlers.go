@@ -1,10 +1,14 @@
 package api
 
 import (
+	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
+	"golang.org/x/net/websocket"
 
 	"github.com/homepc/atlas-audio-engine/internal/scheduler"
 )
@@ -97,6 +101,43 @@ func (h *Handler) State(c echo.Context) error {
 		return err
 	}
 	return c.JSON(http.StatusOK, state)
+}
+
+func (h *Handler) StateWebSocket(c echo.Context) error {
+	channelID := c.Param("id")
+	websocket.Handler(func(ws *websocket.Conn) {
+		defer ws.Close()
+
+		log.Printf("event=websocket.connect channel_id=%s remote_addr=%s", channelID, c.RealIP())
+		defer log.Printf("event=websocket.disconnect channel_id=%s remote_addr=%s", channelID, c.RealIP())
+
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			state, err := h.service.State(c.Request().Context(), channelID)
+			if err != nil {
+				_ = websocket.Message.Send(ws, `{"error":"unable to load state"}`)
+				return
+			}
+
+			payload, err := json.Marshal(state)
+			if err != nil {
+				_ = websocket.Message.Send(ws, `{"error":"unable to encode state"}`)
+				return
+			}
+			if err := websocket.Message.Send(ws, string(payload)); err != nil {
+				return
+			}
+
+			select {
+			case <-c.Request().Context().Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}).ServeHTTP(c.Response(), c.Request())
+	return nil
 }
 
 func (h *Handler) Artwork(c echo.Context) error {

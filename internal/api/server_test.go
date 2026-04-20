@@ -8,8 +8,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/net/websocket"
 
 	"github.com/homepc/atlas-audio-engine/internal/domain"
 	"github.com/homepc/atlas-audio-engine/internal/scheduler"
@@ -91,6 +94,9 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	}
 	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("Playlist Editor")) {
 		t.Fatalf("expected home page HTML to include playlist editor")
+	}
+	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("WebSocket")) {
+		t.Fatalf("expected home page HTML to include websocket live updates")
 	}
 
 	artworkRecorder := httptest.NewRecorder()
@@ -380,5 +386,61 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	}
 	if advancedPlayhead.TrackID != "track-3" {
 		t.Fatalf("expected remaining queued track after skipped reordered item, got %s", advancedPlayhead.TrackID)
+	}
+}
+
+func TestStateWebSocketSendsSnapshot(t *testing.T) {
+	now := time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC)
+	repository := memory.NewStore()
+	state := store.ChannelState{
+		Channel: domain.Channel{
+			ID:             "channel-1",
+			Name:           "Test Channel",
+			CreatedAt:      now.Add(-time.Hour),
+			StartedAt:      now,
+			CurrentTrackID: "track-1",
+			PlaylistCursor: 0,
+		},
+		PlaylistTrackIDs: []string{"track-1", "track-2"},
+	}
+	if err := repository.UpsertChannelState(context.Background(), state); err != nil {
+		t.Fatalf("seed store: %v", err)
+	}
+
+	library := apiFakeLibrary{
+		tracks: map[string]domain.Track{
+			"track-1": {ID: "track-1", Title: "Track One", Artist: "Artist", DurationMs: 1000, SourceType: domain.SourceTypeLocal},
+			"track-2": {ID: "track-2", Title: "Track Two", Artist: "Artist", DurationMs: 1000, SourceType: domain.SourceTypeLocal},
+		},
+	}
+
+	service := scheduler.NewServiceWithClock(repository, library, func() time.Time { return now })
+	server := httptest.NewServer(NewServer(service))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/channels/channel-1/ws"
+	ws, err := websocket.Dial(wsURL, "", server.URL)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer ws.Close()
+
+	var raw string
+	if err := websocket.Message.Receive(ws, &raw); err != nil {
+		t.Fatalf("receive websocket message: %v", err)
+	}
+
+	var snapshot domain.ChannelStateSnapshot
+	if err := json.Unmarshal([]byte(raw), &snapshot); err != nil {
+		t.Fatalf("unmarshal websocket snapshot: %v", err)
+	}
+	if snapshot.ChannelID != "channel-1" {
+		t.Fatalf("expected channel-1 snapshot, got %s", snapshot.ChannelID)
+	}
+	if snapshot.NowPlaying.TrackID != "track-1" {
+		t.Fatalf("expected websocket now-playing track-1, got %s", snapshot.NowPlaying.TrackID)
+	}
+	if snapshot.NextTrack == nil || snapshot.NextTrack.TrackID != "track-2" {
+		t.Fatalf("expected websocket next track track-2, got %#v", snapshot.NextTrack)
 	}
 }

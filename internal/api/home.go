@@ -407,6 +407,7 @@ const homePageHTML = `<!doctype html>
     let libraryTracks = [];
     let previousPlaylistTrackIds = null;
     let statusHoldUntil = 0;
+    let stateSocket = null;
     let displayedNowPlaying = {
       artworkUrl: null,
       title: null,
@@ -702,6 +703,7 @@ const homePageHTML = `<!doctype html>
       try {
         if (!channelId) {
           channelId = await loadChannelId();
+          connectStateSocket();
         }
         if (playlistTracks.length === 0 && libraryTracks.length === 0) {
           await refreshTracks();
@@ -719,6 +721,36 @@ const homePageHTML = `<!doctype html>
         elements.nextTitle.textContent = 'Unavailable';
         elements.nextArtist.textContent = '';
       }
+    }
+
+    function connectStateSocket() {
+      if (!channelId || !window.WebSocket || stateSocket) {
+        return;
+      }
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const socket = new WebSocket(protocol + '//' + window.location.host + '/channels/' + encodeURIComponent(channelId) + '/ws');
+      stateSocket = socket;
+
+      socket.addEventListener('message', (event) => {
+        try {
+          const nextSnapshot = JSON.parse(event.data);
+          if (nextSnapshot.error) {
+            return;
+          }
+          snapshot = nextSnapshot;
+          render();
+        } catch (_error) {
+          // Ignore malformed messages and keep the polling fallback alive.
+        }
+      });
+
+      socket.addEventListener('close', () => {
+        if (stateSocket === socket) {
+          stateSocket = null;
+        }
+        setTimeout(connectStateSocket, 3000);
+      });
     }
 
     async function refreshTracks() {
@@ -918,7 +950,11 @@ const homePageHTML = `<!doctype html>
     elements.libraryFilter.addEventListener('input', renderTracks);
     elements.skipButton.addEventListener('click', skipTrack);
     refreshState();
-    setInterval(refreshState, 5000);
+    setInterval(() => {
+      if (!stateSocket || stateSocket.readyState !== WebSocket.OPEN) {
+        refreshState();
+      }
+    }, 5000);
     setInterval(render, 250);
   </script>
 </body>

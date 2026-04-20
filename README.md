@@ -21,7 +21,6 @@ Phase 1 intentionally does not include:
 - Jellyfin or Spotify integrations
 - HLS/RTMP output
 - overlay rendering
-- WebSocket live updates
 - operator dashboard UI
 
 ## Project Layout
@@ -64,6 +63,7 @@ If a repo-local `.env` file exists, the app loads it automatically before applyi
 - `PUT /channels/:id/playlist`
 - `GET /channels/:id/tracks`
 - `GET /channels/:id/state`
+- `GET /channels/:id/ws`
 - `GET /channels/:id/now-playing`
 - `GET /channels/:id/queue`
 - `POST /channels/:id/queue`
@@ -73,6 +73,7 @@ If a repo-local `.env` file exists, the app loads it automatically before applyi
 
 `GET /channels/:id/queue` returns enriched queue entries with track metadata and queue position, not just raw track ids.
 `GET /channels/:id/state` returns a single operator snapshot with `now_playing`, `queue`, and `next_track`.
+`GET /channels/:id/ws` upgrades to a WebSocket and streams the same state snapshot for live now-playing updates.
 
 Example queue request:
 
