@@ -8,7 +8,7 @@ This first implementation focuses on a thin vertical slice:
 - canonical track/channel/playhead models
 - a deterministic scheduler with queue priority at track boundaries
 - an HTTP API for health, channels, now-playing, and queue control
-- a built-in homepage for now playing, progress, next song, skip control, queue visibility, queue adds, and persisted playlist edits
+- a built-in homepage for now playing, progress, next song, skip control, queue visibility, queue adds/removes/reordering, and persisted playlist edits
 
 ## Current MVP
 
@@ -94,6 +94,12 @@ For local development on Windows PowerShell, copy `.env.example` to `.env`, upda
 
 ```powershell
 go run ./cmd/atlas-audio-engine
+```
+
+Run the local smoke test after setting `ATLAS_MEDIA_DIR` or passing `-MediaDir`:
+
+```powershell
+.\scripts\smoke.ps1 -MediaDir 'C:\path\to\music'
 ```
 
 Before starting the server, place supported audio files under the media directory referenced by `ATLAS_MEDIA_DIR`.

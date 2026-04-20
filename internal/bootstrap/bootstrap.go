@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/homepc/atlas-audio-engine/internal/domain"
@@ -23,6 +24,7 @@ func SeedLocalChannel(
 		return err
 	}
 	if len(channels) > 0 {
+		log.Printf("event=bootstrap.skip reason=channels_exist channel_count=%d", len(channels))
 		return nil
 	}
 
@@ -50,5 +52,9 @@ func SeedLocalChannel(
 		},
 		PlaylistTrackIDs: playlistTrackIDs,
 	}
-	return repository.UpsertChannelState(ctx, state)
+	if err := repository.UpsertChannelState(ctx, state); err != nil {
+		return err
+	}
+	log.Printf("event=bootstrap.seed channel_id=%s track_count=%d", channelID, len(playlistTrackIDs))
+	return nil
 }

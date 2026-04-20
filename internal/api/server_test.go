@@ -189,6 +189,26 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 		t.Fatalf("expected replaced playlist order [track-2, track-3, track-1], got %#v", replacedPlaylist)
 	}
 
+	emptyPlaylistBody, _ := json.Marshal(map[string][]string{"track_ids": []string{}})
+	emptyPlaylistRecorder := httptest.NewRecorder()
+	emptyPlaylistRequest := httptest.NewRequest(http.MethodPut, "/channels/channel-1/playlist", bytes.NewReader(emptyPlaylistBody))
+	emptyPlaylistRequest.Header.Set("Content-Type", "application/json")
+	server.ServeHTTP(emptyPlaylistRecorder, emptyPlaylistRequest)
+
+	if emptyPlaylistRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 from empty playlist replace, got %d", emptyPlaylistRecorder.Code)
+	}
+
+	duplicatePlaylistBody, _ := json.Marshal(map[string][]string{"track_ids": []string{"track-1", "track-1"}})
+	duplicatePlaylistRecorder := httptest.NewRecorder()
+	duplicatePlaylistRequest := httptest.NewRequest(http.MethodPut, "/channels/channel-1/playlist", bytes.NewReader(duplicatePlaylistBody))
+	duplicatePlaylistRequest.Header.Set("Content-Type", "application/json")
+	server.ServeHTTP(duplicatePlaylistRecorder, duplicatePlaylistRequest)
+
+	if duplicatePlaylistRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 from duplicate playlist replace, got %d", duplicatePlaylistRecorder.Code)
+	}
+
 	stateRecorder := httptest.NewRecorder()
 	stateRequest := httptest.NewRequest(http.MethodGet, "/channels/channel-1/state", nil)
 	server.ServeHTTP(stateRecorder, stateRequest)

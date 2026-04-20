@@ -3,6 +3,8 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log"
 	"time"
 
 	"github.com/homepc/atlas-audio-engine/internal/domain"
@@ -115,6 +117,21 @@ func (s *Service) Playlist(ctx context.Context, channelID string) ([]domain.Play
 }
 
 func (s *Service) ReplacePlaylist(ctx context.Context, channelID string, trackIDs []string) ([]domain.PlaylistEntry, error) {
+	if len(trackIDs) == 0 {
+		return nil, errors.New("playlist must contain at least one track")
+	}
+
+	seen := make(map[string]struct{}, len(trackIDs))
+	for _, trackID := range trackIDs {
+		if trackID == "" {
+			return nil, errors.New("playlist track id cannot be empty")
+		}
+		if _, exists := seen[trackID]; exists {
+			return nil, fmt.Errorf("playlist contains duplicate track %q", trackID)
+		}
+		seen[trackID] = struct{}{}
+	}
+
 	state, err := s.store.GetChannelState(ctx, channelID)
 	if err != nil {
 		return nil, err
@@ -132,16 +149,13 @@ func (s *Service) ReplacePlaylist(ctx context.Context, channelID string, trackID
 
 	state.PlaylistTrackIDs = append([]string(nil), trackIDs...)
 	state.Channel.PlaylistCursor = 0
-	if len(trackIDs) == 0 {
-		state.Channel.CurrentTrackID = ""
-	} else {
-		state.Channel.CurrentTrackID = trackIDs[0]
-		state.Channel.StartedAt = s.clock()
-	}
+	state.Channel.CurrentTrackID = trackIDs[0]
+	state.Channel.StartedAt = s.clock()
 
 	if err := s.store.UpsertChannelState(ctx, state); err != nil {
 		return nil, err
 	}
+	log.Printf("event=playlist.replace channel_id=%s track_count=%d current_track_id=%s", channelID, len(trackIDs), state.Channel.CurrentTrackID)
 	return s.Playlist(ctx, channelID)
 }
 
@@ -149,11 +163,20 @@ func (s *Service) Enqueue(ctx context.Context, channelID, trackID string) (domai
 	if _, err := s.source.GetTrack(ctx, trackID); err != nil {
 		return domain.QueueItem{}, err
 	}
-	return s.store.Enqueue(ctx, channelID, trackID, s.clock())
+	item, err := s.store.Enqueue(ctx, channelID, trackID, s.clock())
+	if err != nil {
+		return domain.QueueItem{}, err
+	}
+	log.Printf("event=queue.enqueue channel_id=%s queue_item_id=%s track_id=%s", channelID, item.ID, trackID)
+	return item, nil
 }
 
 func (s *Service) RemoveQueueItem(ctx context.Context, channelID, queueItemID string) error {
-	return s.store.RemoveQueueItem(ctx, channelID, queueItemID)
+	if err := s.store.RemoveQueueItem(ctx, channelID, queueItemID); err != nil {
+		return err
+	}
+	log.Printf("event=queue.remove channel_id=%s queue_item_id=%s", channelID, queueItemID)
+	return nil
 }
 
 func (s *Service) ArtworkPath(ctx context.Context, trackID string) (string, error) {
@@ -206,6 +229,7 @@ func (s *Service) MoveQueueItem(ctx context.Context, channelID, queueItemID stri
 	if err := s.store.UpsertChannelState(ctx, state); err != nil {
 		return nil, err
 	}
+	log.Printf("event=queue.move channel_id=%s queue_item_id=%s position=%d", channelID, queueItemID, position)
 	return s.Queue(ctx, channelID)
 }
 
@@ -240,6 +264,7 @@ func (s *Service) Skip(ctx context.Context, channelID string) (domain.PlayheadSt
 	if err := s.store.UpsertChannelState(ctx, state); err != nil {
 		return domain.PlayheadState{}, err
 	}
+	log.Printf("event=playback.skip channel_id=%s track_id=%s queued_remaining=%d", channelID, nextTrack.ID, len(state.Queue))
 
 	return domain.PlayheadState{
 		ChannelID:  channelID,
@@ -349,6 +374,7 @@ func (s *Service) Current(ctx context.Context, channelID string, at time.Time) (
 		if err := s.store.UpsertChannelState(ctx, state); err != nil {
 			return domain.PlayheadState{}, err
 		}
+		log.Printf("event=scheduler.advance channel_id=%s track_id=%s started_at=%s queued_remaining=%d", channelID, currentTrack.ID, state.Channel.StartedAt.UTC().Format(time.RFC3339), len(state.Queue))
 	}
 
 	elapsed := at.Sub(state.Channel.StartedAt.UTC()).Milliseconds()

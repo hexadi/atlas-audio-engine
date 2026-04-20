@@ -20,6 +20,7 @@ import (
 func main() {
 	cfg := config.Load()
 	ctx := context.Background()
+	log.Printf("event=app.configure listen_addr=%s database_path=%q media_dir=%q channel_id=%s", cfg.ListenAddress, cfg.DatabasePath, cfg.MediaDir, cfg.ChannelID)
 
 	trackSource := localfiles.NewAdapter(cfg.MediaDir, localfiles.NewFFprobeProber("ffprobe"))
 	store, err := sqlite.NewStore(cfg.DatabasePath)

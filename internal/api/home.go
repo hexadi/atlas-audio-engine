@@ -222,6 +222,28 @@ const homePageHTML = `<!doctype html>
       border: 1px solid rgba(255, 255, 255, 0.06);
     }
 
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .filter-input {
+      width: min(240px, 100%);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 999px;
+      padding: 10px 14px;
+      color: var(--text);
+      background: rgba(0, 0, 0, 0.22);
+      outline: none;
+    }
+
+    .filter-input:focus {
+      border-color: rgba(110, 214, 255, 0.58);
+    }
+
     .queue-list,
     .track-list,
     .library-list {
@@ -336,14 +358,20 @@ const homePageHTML = `<!doctype html>
       </div>
 
       <div class="playlist-card">
-        <span class="label">Playlist Editor</span>
+        <div class="card-header">
+          <span class="label">Playlist Editor</span>
+          <input id="playlist-filter" class="filter-input" type="search" placeholder="Filter playlist">
+        </div>
         <ul id="track-list" class="track-list">
           <li class="empty">Loading playlist...</li>
         </ul>
       </div>
 
       <div class="library-card">
-        <span class="label">Library</span>
+        <div class="card-header">
+          <span class="label">Library</span>
+          <input id="library-filter" class="filter-input" type="search" placeholder="Filter library">
+        </div>
         <ul id="library-list" class="library-list">
           <li class="empty">Loading library...</li>
         </ul>
@@ -367,6 +395,8 @@ const homePageHTML = `<!doctype html>
       queueList: document.getElementById('queue-list'),
       trackList: document.getElementById('track-list'),
       libraryList: document.getElementById('library-list'),
+      playlistFilter: document.getElementById('playlist-filter'),
+      libraryFilter: document.getElementById('library-filter'),
       coverImage: document.getElementById('cover-image'),
       fallbackCover: document.getElementById('fallback-cover'),
     };
@@ -375,6 +405,8 @@ const homePageHTML = `<!doctype html>
     let channelId = null;
     let playlistTracks = [];
     let libraryTracks = [];
+    let previousPlaylistTrackIds = null;
+    let statusHoldUntil = 0;
     let displayedNowPlaying = {
       artworkUrl: null,
       title: null,
@@ -415,7 +447,9 @@ const homePageHTML = `<!doctype html>
       }
 
       const queueCount = Array.isArray(snapshot.queue) ? snapshot.queue.length : 0;
-      elements.status.textContent = 'Channel ready. ' + queueCount + ' queued track' + (queueCount === 1 ? '' : 's') + '.';
+      if (Date.now() > statusHoldUntil) {
+        elements.status.textContent = 'Channel ready. ' + queueCount + ' queued track' + (queueCount === 1 ? '' : 's') + '.';
+      }
 
       elements.queueList.innerHTML = '';
       if (queueCount === 0) {
@@ -424,7 +458,7 @@ const homePageHTML = `<!doctype html>
         item.textContent = 'No queued tracks';
         elements.queueList.appendChild(item);
       } else {
-        snapshot.queue.slice(0, 5).forEach((track) => {
+        snapshot.queue.forEach((track, index) => {
           const item = document.createElement('li');
           item.className = 'queue-item';
 
@@ -435,8 +469,35 @@ const homePageHTML = `<!doctype html>
           const label = document.createElement('span');
           label.textContent = (track.title || 'Unknown track') + ' - ' + (track.artist || 'Unknown artist');
 
+          const actions = document.createElement('span');
+          actions.className = 'button-row';
+
+          const upButton = document.createElement('button');
+          upButton.type = 'button';
+          upButton.className = 'secondary-button';
+          upButton.textContent = 'Up';
+          upButton.disabled = index === 0;
+          upButton.addEventListener('click', () => moveQueueItem(track.id, index));
+
+          const downButton = document.createElement('button');
+          downButton.type = 'button';
+          downButton.className = 'secondary-button';
+          downButton.textContent = 'Down';
+          downButton.disabled = index === queueCount - 1;
+          downButton.addEventListener('click', () => moveQueueItem(track.id, index + 2));
+
+          const removeButton = document.createElement('button');
+          removeButton.type = 'button';
+          removeButton.className = 'secondary-button';
+          removeButton.textContent = 'Remove';
+          removeButton.addEventListener('click', () => removeQueueItem(track.id));
+
+          actions.appendChild(upButton);
+          actions.appendChild(downButton);
+          actions.appendChild(removeButton);
           item.appendChild(position);
           item.appendChild(label);
+          item.appendChild(actions);
           elements.queueList.appendChild(item);
         });
       }
@@ -476,13 +537,23 @@ const homePageHTML = `<!doctype html>
     function renderTracks() {
       elements.trackList.innerHTML = '';
 
+      const playlistQuery = normalizeFilter(elements.playlistFilter.value);
+      const filteredPlaylistTracks = playlistTracks
+        .map((track, index) => ({ track, index }))
+        .filter((entry) => matchesTrack(entry.track, playlistQuery));
+
       if (!Array.isArray(playlistTracks) || playlistTracks.length === 0) {
         const item = document.createElement('li');
         item.className = 'empty';
         item.textContent = 'Playlist is empty';
         elements.trackList.appendChild(item);
+      } else if (filteredPlaylistTracks.length === 0) {
+        const item = document.createElement('li');
+        item.className = 'empty';
+        item.textContent = 'No playlist matches';
+        elements.trackList.appendChild(item);
       } else {
-        playlistTracks.forEach((track, index) => {
+        filteredPlaylistTracks.forEach(({ track, index }) => {
           const item = document.createElement('li');
           item.className = 'track-item';
 
@@ -544,16 +615,25 @@ const homePageHTML = `<!doctype html>
       }
 
       elements.libraryList.innerHTML = '';
+      const libraryQuery = normalizeFilter(elements.libraryFilter.value);
+      const filteredLibraryTracks = libraryTracks.filter((track) => matchesTrack(track, libraryQuery));
+
       if (!Array.isArray(libraryTracks) || libraryTracks.length === 0) {
         const item = document.createElement('li');
         item.className = 'empty';
         item.textContent = 'No library tracks loaded';
         elements.libraryList.appendChild(item);
         return;
+      } else if (filteredLibraryTracks.length === 0) {
+        const item = document.createElement('li');
+        item.className = 'empty';
+        item.textContent = 'No library matches';
+        elements.libraryList.appendChild(item);
+        return;
       }
 
       const playlistIDs = new Set(playlistTracks.map((track) => track.track_id || track.id));
-      libraryTracks.slice(0, 12).forEach((track, index) => {
+      filteredLibraryTracks.slice(0, 12).forEach((track, index) => {
         const item = document.createElement('li');
         item.className = 'track-item';
 
@@ -586,6 +666,24 @@ const homePageHTML = `<!doctype html>
         item.appendChild(button);
         elements.libraryList.appendChild(item);
       });
+    }
+
+    function normalizeFilter(value) {
+      return String(value || '').trim().toLowerCase();
+    }
+
+    function matchesTrack(track, query) {
+      if (!query) {
+        return true;
+      }
+      const haystack = [
+        track.title,
+        track.artist,
+        track.album,
+        track.track_id,
+        track.id,
+      ].join(' ').toLowerCase();
+      return haystack.includes(query);
     }
 
     async function loadChannelId() {
@@ -645,6 +743,12 @@ const homePageHTML = `<!doctype html>
       if (!channelId) {
         return;
       }
+      if (trackIds.length === 0) {
+        throw new Error('Playlist must keep at least one track');
+      }
+      if (new Set(trackIds).size !== trackIds.length) {
+        throw new Error('Playlist already has that track');
+      }
       elements.status.textContent = 'Saving playlist...';
       const response = await fetch('/channels/' + encodeURIComponent(channelId) + '/playlist', {
         method: 'PUT',
@@ -659,6 +763,15 @@ const homePageHTML = `<!doctype html>
       await refreshState();
     }
 
+    async function savePlaylistWithUndo(trackIds, actionLabel) {
+      previousPlaylistTrackIds = playlistTracks.map((track) => track.track_id || track.id);
+      await savePlaylist(trackIds);
+      statusHoldUntil = Date.now() + 10000;
+      elements.status.innerHTML = actionLabel + '. <button id="undo-playlist-button" class="secondary-button" type="button">Undo</button>';
+      const undoButton = document.getElementById('undo-playlist-button');
+      undoButton.addEventListener('click', undoPlaylistChange);
+    }
+
     async function addPlaylistTrack(trackId, button) {
       if (!trackId) {
         return;
@@ -666,7 +779,10 @@ const homePageHTML = `<!doctype html>
       button.disabled = true;
       try {
         const trackIds = playlistTracks.map((track) => track.track_id || track.id);
-        await savePlaylist(trackIds.concat(trackId));
+        if (trackIds.includes(trackId)) {
+          throw new Error('Playlist already has that track');
+        }
+        await savePlaylistWithUndo(trackIds.concat(trackId), 'Track added to playlist');
       } catch (error) {
         elements.status.textContent = error.message || 'Failed to add track to playlist';
       } finally {
@@ -677,8 +793,11 @@ const homePageHTML = `<!doctype html>
     async function removePlaylistTrack(index) {
       try {
         const trackIds = playlistTracks.map((track) => track.track_id || track.id);
+        if (trackIds.length <= 1) {
+          throw new Error('Playlist must keep at least one track');
+        }
         trackIds.splice(index, 1);
-        await savePlaylist(trackIds);
+        await savePlaylistWithUndo(trackIds, 'Track removed from playlist');
       } catch (error) {
         elements.status.textContent = error.message || 'Failed to remove track from playlist';
       }
@@ -692,9 +811,24 @@ const homePageHTML = `<!doctype html>
         const trackIds = playlistTracks.map((track) => track.track_id || track.id);
         const moved = trackIds.splice(fromIndex, 1)[0];
         trackIds.splice(toIndex, 0, moved);
-        await savePlaylist(trackIds);
+        await savePlaylistWithUndo(trackIds, 'Playlist reordered');
       } catch (error) {
         elements.status.textContent = error.message || 'Failed to reorder playlist';
+      }
+    }
+
+    async function undoPlaylistChange() {
+      if (!previousPlaylistTrackIds) {
+        return;
+      }
+      try {
+        const trackIds = previousPlaylistTrackIds;
+        previousPlaylistTrackIds = null;
+        await savePlaylist(trackIds);
+        statusHoldUntil = Date.now() + 4000;
+        elements.status.textContent = 'Playlist change undone.';
+      } catch (error) {
+        elements.status.textContent = error.message || 'Failed to undo playlist change';
       }
     }
 
@@ -721,6 +855,45 @@ const homePageHTML = `<!doctype html>
       }
     }
 
+    async function moveQueueItem(queueItemId, position) {
+      if (!channelId || !queueItemId) {
+        return;
+      }
+      elements.status.textContent = 'Moving queued track...';
+      try {
+        const response = await fetch('/channels/' + encodeURIComponent(channelId) + '/queue/' + encodeURIComponent(queueItemId) + '/move', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ position }),
+        });
+        if (!response.ok) {
+          throw new Error('Unable to move queued track');
+        }
+        snapshot.queue = await response.json();
+        await refreshState();
+      } catch (error) {
+        elements.status.textContent = error.message || 'Failed to move queued track';
+      }
+    }
+
+    async function removeQueueItem(queueItemId) {
+      if (!channelId || !queueItemId) {
+        return;
+      }
+      elements.status.textContent = 'Removing queued track...';
+      try {
+        const response = await fetch('/channels/' + encodeURIComponent(channelId) + '/queue/' + encodeURIComponent(queueItemId), {
+          method: 'DELETE',
+        });
+        if (!response.ok) {
+          throw new Error('Unable to remove queued track');
+        }
+        await refreshState();
+      } catch (error) {
+        elements.status.textContent = error.message || 'Failed to remove queued track';
+      }
+    }
+
     async function skipTrack() {
       if (!channelId) {
         return;
@@ -741,6 +914,8 @@ const homePageHTML = `<!doctype html>
       }
     }
 
+    elements.playlistFilter.addEventListener('input', renderTracks);
+    elements.libraryFilter.addEventListener('input', renderTracks);
     elements.skipButton.addEventListener('click', skipTrack);
     refreshState();
     setInterval(refreshState, 5000);

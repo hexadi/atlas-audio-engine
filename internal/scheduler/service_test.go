@@ -155,6 +155,20 @@ func TestReplacePlaylistPersistsNewOrderAndResetsCurrentTrack(t *testing.T) {
 	}
 }
 
+func TestReplacePlaylistRejectsEmptyAndDuplicateTracks(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 19, 12, 3, 0, 0, time.UTC)
+	service := newTestService(t, now)
+
+	if _, err := service.ReplacePlaylist(context.Background(), "channel-1", nil); err == nil {
+		t.Fatalf("expected empty playlist replacement to fail")
+	}
+	if _, err := service.ReplacePlaylist(context.Background(), "channel-1", []string{"track-1", "track-1"}); err == nil {
+		t.Fatalf("expected duplicate playlist replacement to fail")
+	}
+}
+
 func newTestService(t *testing.T, now time.Time) *Service {
 	t.Helper()
 

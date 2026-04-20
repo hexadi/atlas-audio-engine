@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -95,6 +96,7 @@ func (a *Adapter) ListTracks(ctx context.Context) ([]domain.Track, error) {
 	}
 
 	a.storeCache(tracks)
+	log.Printf("event=library.scan source=local root=%q track_count=%d", a.root, len(tracks))
 	return tracks, nil
 }
 

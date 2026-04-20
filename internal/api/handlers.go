@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 
@@ -68,6 +69,19 @@ func (h *Handler) ReplacePlaylist(c echo.Context) error {
 	var request replacePlaylistRequest
 	if err := c.Bind(&request); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if len(request.TrackIDs) == 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "playlist must contain at least one track")
+	}
+	seen := make(map[string]struct{}, len(request.TrackIDs))
+	for _, trackID := range request.TrackIDs {
+		if strings.TrimSpace(trackID) == "" {
+			return echo.NewHTTPError(http.StatusBadRequest, "playlist track id cannot be empty")
+		}
+		if _, exists := seen[trackID]; exists {
+			return echo.NewHTTPError(http.StatusBadRequest, "playlist cannot contain duplicate tracks")
+		}
+		seen[trackID] = struct{}{}
 	}
 
 	playlist, err := h.service.ReplacePlaylist(c.Request().Context(), c.Param("id"), request.TrackIDs)
