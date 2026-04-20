@@ -6,17 +6,23 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
+	"github.com/homepc/atlas-audio-engine/internal/media"
 	"github.com/homepc/atlas-audio-engine/internal/scheduler"
 )
 
 func NewServer(service *scheduler.Service) *echo.Echo {
+	return NewServerWithStreamer(service, nil)
+}
+
+func NewServerWithStreamer(service *scheduler.Service, streamer media.Streamer) *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
 	e.Use(middleware.Recover())
 
-	handler := &Handler{service: service}
+	handler := &Handler{service: service, streamer: streamer}
 
 	e.GET("/", handler.Home)
+	e.GET("/visual", handler.Visual)
 	e.GET("/artwork/:trackId", handler.Artwork)
 	e.GET("/health", handler.Health)
 	e.GET("/channels", handler.ListChannels)
@@ -26,6 +32,11 @@ func NewServer(service *scheduler.Service) *echo.Echo {
 	e.GET("/channels/:id/library", handler.Library)
 	e.GET("/channels/:id/playlist", handler.Playlist)
 	e.PUT("/channels/:id/playlist", handler.ReplacePlaylist)
+	e.GET("/channels/:id/tracks/:trackId/audio", handler.Audio)
+	e.GET("/channels/:id/stream.m3u8", handler.HLSManifest)
+	e.GET("/channels/:id/stream.mp3", handler.StreamMP3)
+	e.GET("/channels/:id/stream.ts", handler.StreamVideo)
+	e.GET("/channels/:id/broadcast.ts", handler.BroadcastVideo)
 	e.GET("/channels/:id/now-playing", handler.NowPlaying)
 	e.GET("/channels/:id/queue", handler.Queue)
 	e.POST("/channels/:id/queue", handler.Enqueue)

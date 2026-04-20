@@ -23,10 +23,6 @@ func SeedLocalChannel(
 	if err != nil {
 		return err
 	}
-	if len(channels) > 0 {
-		log.Printf("event=bootstrap.skip reason=channels_exist channel_count=%d", len(channels))
-		return nil
-	}
 
 	tracks, err := library.ListTracks(ctx)
 	if err != nil {
@@ -39,6 +35,31 @@ func SeedLocalChannel(
 	playlistTrackIDs := make([]string, 0, len(tracks))
 	for _, track := range tracks {
 		playlistTrackIDs = append(playlistTrackIDs, track.ID)
+	}
+
+	if len(channels) > 0 {
+		state, err := repository.GetChannelState(ctx, channelID)
+		if err != nil {
+			log.Printf("event=bootstrap.skip reason=channels_exist configured_channel_missing channel_id=%s channel_count=%d", channelID, len(channels))
+			return nil
+		}
+
+		reconciledTrackIDs := reconcilePlaylistTrackIDs(state.PlaylistTrackIDs, playlistTrackIDs)
+		currentTrackValid := containsTrackID(reconciledTrackIDs, state.Channel.CurrentTrackID)
+		if len(reconciledTrackIDs) == len(state.PlaylistTrackIDs) && currentTrackValid {
+			log.Printf("event=bootstrap.skip reason=channel_valid channel_id=%s track_count=%d", channelID, len(reconciledTrackIDs))
+			return nil
+		}
+
+		state.PlaylistTrackIDs = reconciledTrackIDs
+		state.Channel.PlaylistCursor = 0
+		state.Channel.CurrentTrackID = reconciledTrackIDs[0]
+		state.Channel.StartedAt = startAt.UTC()
+		if err := repository.UpsertChannelState(ctx, state); err != nil {
+			return err
+		}
+		log.Printf("event=bootstrap.reconcile channel_id=%s track_count=%d", channelID, len(reconciledTrackIDs))
+		return nil
 	}
 
 	state := store.ChannelState{
@@ -57,4 +78,41 @@ func SeedLocalChannel(
 	}
 	log.Printf("event=bootstrap.seed channel_id=%s track_count=%d", channelID, len(playlistTrackIDs))
 	return nil
+}
+
+func reconcilePlaylistTrackIDs(existingTrackIDs []string, libraryTrackIDs []string) []string {
+	librarySet := make(map[string]struct{}, len(libraryTrackIDs))
+	for _, trackID := range libraryTrackIDs {
+		librarySet[trackID] = struct{}{}
+	}
+
+	reconciled := make([]string, 0, len(libraryTrackIDs))
+	seen := make(map[string]struct{}, len(libraryTrackIDs))
+	for _, trackID := range existingTrackIDs {
+		if _, ok := librarySet[trackID]; !ok {
+			continue
+		}
+		if _, ok := seen[trackID]; ok {
+			continue
+		}
+		reconciled = append(reconciled, trackID)
+		seen[trackID] = struct{}{}
+	}
+
+	for _, trackID := range libraryTrackIDs {
+		if _, ok := seen[trackID]; ok {
+			continue
+		}
+		reconciled = append(reconciled, trackID)
+	}
+	return reconciled
+}
+
+func containsTrackID(trackIDs []string, target string) bool {
+	for _, trackID := range trackIDs {
+		if trackID == target {
+			return true
+		}
+	}
+	return false
 }

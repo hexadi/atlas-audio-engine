@@ -12,6 +12,8 @@ type Config struct {
 	MediaDir      string
 	ChannelID     string
 	ChannelName   string
+	FFmpegPath    string
+	VideoFontPath string
 }
 
 func Load() Config {
@@ -23,6 +25,8 @@ func Load() Config {
 		MediaDir:      getEnv("ATLAS_MEDIA_DIR", "./testdata/media"),
 		ChannelID:     getEnv("ATLAS_CHANNEL_ID", "local-library"),
 		ChannelName:   getEnv("ATLAS_CHANNEL_NAME", "Local Library"),
+		FFmpegPath:    getEnv("ATLAS_FFMPEG_PATH", "ffmpeg"),
+		VideoFontPath: getEnv("ATLAS_VIDEO_FONT_PATH", ""),
 	}
 }
 

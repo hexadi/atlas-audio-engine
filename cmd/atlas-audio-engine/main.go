@@ -12,6 +12,7 @@ import (
 	"github.com/homepc/atlas-audio-engine/internal/api"
 	"github.com/homepc/atlas-audio-engine/internal/bootstrap"
 	"github.com/homepc/atlas-audio-engine/internal/config"
+	"github.com/homepc/atlas-audio-engine/internal/media/ffmpeg"
 	"github.com/homepc/atlas-audio-engine/internal/scheduler"
 	"github.com/homepc/atlas-audio-engine/internal/source/localfiles"
 	"github.com/homepc/atlas-audio-engine/internal/store/sqlite"
@@ -20,7 +21,7 @@ import (
 func main() {
 	cfg := config.Load()
 	ctx := context.Background()
-	log.Printf("event=app.configure listen_addr=%s database_path=%q media_dir=%q channel_id=%s", cfg.ListenAddress, cfg.DatabasePath, cfg.MediaDir, cfg.ChannelID)
+	log.Printf("event=app.configure listen_addr=%s database_path=%q media_dir=%q channel_id=%s ffmpeg_path=%q video_font_path=%q", cfg.ListenAddress, cfg.DatabasePath, cfg.MediaDir, cfg.ChannelID, cfg.FFmpegPath, cfg.VideoFontPath)
 
 	trackSource := localfiles.NewAdapter(cfg.MediaDir, localfiles.NewFFprobeProber("ffprobe"))
 	store, err := sqlite.NewStore(cfg.DatabasePath)
@@ -34,7 +35,7 @@ func main() {
 	}
 
 	service := scheduler.NewService(store, trackSource)
-	server := api.NewServer(service)
+	server := api.NewServerWithStreamer(service, ffmpeg.NewStreamerWithFont(cfg.FFmpegPath, cfg.VideoFontPath))
 
 	httpServer := &http.Server{
 		Addr:              cfg.ListenAddress,

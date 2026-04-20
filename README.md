@@ -19,7 +19,7 @@ The current backend proves the core loop:
 Phase 1 intentionally does not include:
 
 - Jellyfin or Spotify integrations
-- HLS/RTMP output
+- RTMP output
 - overlay rendering
 - operator dashboard UI
 
@@ -48,13 +48,16 @@ Set these environment variables as needed:
 - `ATLAS_MEDIA_DIR` default `./testdata/media`
 - `ATLAS_CHANNEL_ID` default `local-library`
 - `ATLAS_CHANNEL_NAME` default `Local Library`
+- `ATLAS_FFMPEG_PATH` default `ffmpeg`
+- `ATLAS_VIDEO_FONT_PATH` optional `.ttf` or `.otf` file for `stream.ts` text rendering
 
 `ffprobe` must be available on the system path because the local source adapter uses it to read duration and tags.
 If a repo-local `.env` file exists, the app loads it automatically before applying defaults. Existing shell environment variables still take precedence.
 
 ## API
 
-- `GET /` homepage with now playing, progress bar, next song, skip control, queue visibility, queue adds, and playlist editing
+- `GET /` homepage with now playing, audio player, progress bar, next song, skip control, queue visibility, queue adds, and playlist editing
+- `GET /visual` browser-source visual output with cover art, title, artist, next track, and progress
 - `GET /artwork/:trackId` cover image for local tracks that have `cover.jpg` beside the audio file
 - `GET /health`
 - `GET /channels`
@@ -62,6 +65,11 @@ If a repo-local `.env` file exists, the app loads it automatically before applyi
 - `GET /channels/:id/playlist`
 - `PUT /channels/:id/playlist`
 - `GET /channels/:id/tracks`
+- `GET /channels/:id/tracks/:trackId/audio`
+- `GET /channels/:id/stream.m3u8`
+- `GET /channels/:id/stream.mp3`
+- `GET /channels/:id/stream.ts`
+- `GET /channels/:id/broadcast.ts`
 - `GET /channels/:id/state`
 - `GET /channels/:id/ws`
 - `GET /channels/:id/now-playing`
@@ -74,6 +82,11 @@ If a repo-local `.env` file exists, the app loads it automatically before applyi
 `GET /channels/:id/queue` returns enriched queue entries with track metadata and queue position, not just raw track ids.
 `GET /channels/:id/state` returns a single operator snapshot with `now_playing`, `queue`, and `next_track`.
 `GET /channels/:id/ws` upgrades to a WebSocket and streams the same state snapshot for live now-playing updates.
+`GET /channels/:id/tracks/:trackId/audio` serves local audio for tracks attached to that channel playlist, current playhead, or queue.
+`GET /channels/:id/stream.m3u8` returns an initial HLS proof-of-concept manifest for the current local track.
+`GET /channels/:id/stream.mp3` uses FFmpeg to transcode a continuous browser-friendly MP3 station stream, advancing through tracks as the scheduler moves the playhead. The response is flushed in small chunks and paced in realtime so browsers can listen continuously instead of downloading whole songs at once.
+`GET /channels/:id/stream.ts` uses FFmpeg to compose the current audio with a live visual layer based on the same now-playing data as `/visual`: cover art, title, artist, and next track. It returns an MPEG-TS stream suitable for players such as VLC, ffplay, or OBS media sources.
+`GET /channels/:id/broadcast.ts` keeps one FFmpeg video encoder alive while Go continuously renders visual frames with current artwork and progress. FFmpeg overlays reloaded title, artist, next track, and clock text while consuming the channel's continuous MP3 stream. Use this for smoother broadcast-style video output without per-track video encoder restarts.
 
 Example queue request:
 

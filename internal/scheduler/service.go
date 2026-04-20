@@ -190,6 +190,37 @@ func (s *Service) ArtworkPath(ctx context.Context, trackID string) (string, erro
 	return track.ArtworkPath, nil
 }
 
+func (s *Service) ResolvePlayable(ctx context.Context, channelID, trackID string) (source.Playable, error) {
+	state, err := s.store.GetChannelState(ctx, channelID)
+	if err != nil {
+		return source.Playable{}, err
+	}
+
+	found := false
+	if state.Channel.CurrentTrackID == trackID {
+		found = true
+	}
+	for _, playlistTrackID := range state.PlaylistTrackIDs {
+		if playlistTrackID == trackID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		for _, item := range state.Queue {
+			if item.TrackID == trackID {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		return source.Playable{}, errors.New("track is not attached to channel")
+	}
+
+	return s.source.ResolvePlayable(ctx, trackID)
+}
+
 func (s *Service) MoveQueueItem(ctx context.Context, channelID, queueItemID string, position int) ([]domain.QueueEntry, error) {
 	state, err := s.store.GetChannelState(ctx, channelID)
 	if err != nil {
