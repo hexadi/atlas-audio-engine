@@ -20,6 +20,10 @@ type moveQueueItemRequest struct {
 	Position int `json:"position"`
 }
 
+type replacePlaylistRequest struct {
+	TrackIDs []string `json:"track_ids"`
+}
+
 func (h *Handler) Health(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -44,12 +48,49 @@ func (h *Handler) Tracks(c echo.Context) error {
 	return c.JSON(http.StatusOK, tracks)
 }
 
+func (h *Handler) Library(c echo.Context) error {
+	tracks, err := h.service.LibraryTracks(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, tracks)
+}
+
+func (h *Handler) Playlist(c echo.Context) error {
+	playlist, err := h.service.Playlist(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, playlist)
+}
+
+func (h *Handler) ReplacePlaylist(c echo.Context) error {
+	var request replacePlaylistRequest
+	if err := c.Bind(&request); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+
+	playlist, err := h.service.ReplacePlaylist(c.Request().Context(), c.Param("id"), request.TrackIDs)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, playlist)
+}
+
 func (h *Handler) State(c echo.Context) error {
 	state, err := h.service.State(c.Request().Context(), c.Param("id"))
 	if err != nil {
 		return err
 	}
 	return c.JSON(http.StatusOK, state)
+}
+
+func (h *Handler) Artwork(c echo.Context) error {
+	path, err := h.service.ArtworkPath(c.Request().Context(), c.Param("trackId"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusNotFound, "artwork not found")
+	}
+	return c.File(path)
 }
 
 func (h *Handler) NowPlaying(c echo.Context) error {

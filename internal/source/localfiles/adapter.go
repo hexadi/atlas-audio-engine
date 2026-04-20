@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -28,6 +29,7 @@ type Metadata struct {
 	Title      string
 	Artist     string
 	Album      string
+	Disc       string
 	DurationMs int64
 }
 
@@ -142,7 +144,7 @@ func (a *Adapter) buildTrack(ctx context.Context, path string) (domain.Track, er
 		title = fallbackTitle
 	}
 
-	artist := metadata.Artist
+	artist := strings.Join(strings.Split(metadata.Artist, ";"), ", ")
 	if artist == "" {
 		artist = fallbackArtist
 	}
@@ -150,14 +152,23 @@ func (a *Adapter) buildTrack(ctx context.Context, path string) (domain.Track, er
 		artist = "Unknown Artist"
 	}
 
+	trackID := stableID(absolutePath)
+	artworkPath := findCoverArtwork(absolutePath, metadata)
+	artworkURL := ""
+	if artworkPath != "" {
+		artworkURL = "/artwork/" + trackID
+	}
+
 	return domain.Track{
-		ID:         stableID(absolutePath),
-		Title:      title,
-		Artist:     artist,
-		Album:      metadata.Album,
-		DurationMs: metadata.DurationMs,
-		SourceType: domain.SourceTypeLocal,
-		FilePath:   absolutePath,
+		ID:          trackID,
+		Title:       title,
+		Artist:      artist,
+		Album:       metadata.Album,
+		DurationMs:  metadata.DurationMs,
+		SourceType:  domain.SourceTypeLocal,
+		FilePath:    absolutePath,
+		ArtworkPath: artworkPath,
+		ArtworkURL:  artworkURL,
 	}, nil
 }
 
@@ -196,6 +207,26 @@ func isNumericPrefix(value string) bool {
 		}
 	}
 	return true
+}
+
+func findCoverArtwork(trackPath string, metadata Metadata) string {
+	coverPath := filepath.Join(filepath.Dir(trackPath), "cover.jpg")
+	if info, err := os.Stat(coverPath); err == nil && !info.IsDir() {
+		return coverPath
+	}
+
+	if metadata.Disc != "" {
+		parentCoverPath := filepath.Join(filepath.Dir(trackPath), "..", "cover.jpg")
+		if info, err := os.Stat(parentCoverPath); err == nil && !info.IsDir() {
+			absolutePath, absErr := filepath.Abs(parentCoverPath)
+			if absErr == nil {
+				return absolutePath
+			}
+			return parentCoverPath
+		}
+	}
+
+	return ""
 }
 
 func (a *Adapter) cachedTracks() ([]domain.Track, bool) {

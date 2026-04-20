@@ -8,7 +8,7 @@ This first implementation focuses on a thin vertical slice:
 - canonical track/channel/playhead models
 - a deterministic scheduler with queue priority at track boundaries
 - an HTTP API for health, channels, now-playing, and queue control
-- a built-in homepage for now playing, progress, and next song
+- a built-in homepage for now playing, progress, next song, skip control, queue visibility, queue adds, and persisted playlist edits
 
 ## Current MVP
 
@@ -55,9 +55,13 @@ If a repo-local `.env` file exists, the app loads it automatically before applyi
 
 ## API
 
-- `GET /` homepage with now playing, progress bar, and next song
+- `GET /` homepage with now playing, progress bar, next song, skip control, queue visibility, queue adds, and playlist editing
+- `GET /artwork/:trackId` cover image for local tracks that have `cover.jpg` beside the audio file
 - `GET /health`
 - `GET /channels`
+- `GET /channels/:id/library`
+- `GET /channels/:id/playlist`
+- `PUT /channels/:id/playlist`
 - `GET /channels/:id/tracks`
 - `GET /channels/:id/state`
 - `GET /channels/:id/now-playing`

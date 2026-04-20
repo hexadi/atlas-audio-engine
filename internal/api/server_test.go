@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -38,6 +40,11 @@ func (f apiFakeLibrary) ResolvePlayable(_ context.Context, id string) (source.Pl
 
 func TestNowPlayingAndQueueFlow(t *testing.T) {
 	now := time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC)
+	coverPath := filepath.Join(t.TempDir(), "cover.jpg")
+	if err := os.WriteFile(coverPath, []byte("fake-cover"), 0o644); err != nil {
+		t.Fatalf("write cover: %v", err)
+	}
+
 	repository := memory.NewStore()
 	state := store.ChannelState{
 		Channel: domain.Channel{
@@ -56,7 +63,7 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 
 	library := apiFakeLibrary{
 		tracks: map[string]domain.Track{
-			"track-1": {ID: "track-1", Title: "Track One", Artist: "Artist", DurationMs: 1000, SourceType: domain.SourceTypeLocal},
+			"track-1": {ID: "track-1", Title: "Track One", Artist: "Artist", DurationMs: 1000, SourceType: domain.SourceTypeLocal, ArtworkPath: coverPath, ArtworkURL: "/artwork/track-1"},
 			"track-2": {ID: "track-2", Title: "Track Two", Artist: "Artist", DurationMs: 1000, SourceType: domain.SourceTypeLocal},
 			"track-3": {ID: "track-3", Title: "Queued", Artist: "Artist", DurationMs: 1000, SourceType: domain.SourceTypeLocal},
 			"track-4": {ID: "track-4", Title: "Queued Again", Artist: "Artist", DurationMs: 1000, SourceType: domain.SourceTypeLocal},
@@ -76,6 +83,23 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("Now Playing")) {
 		t.Fatalf("expected home page HTML to include now playing heading")
 	}
+	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("Skip Track")) {
+		t.Fatalf("expected home page HTML to include skip control")
+	}
+	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("Add to Queue")) && !bytes.Contains(homeRecorder.Body.Bytes(), []byte("Library")) {
+		t.Fatalf("expected home page HTML to include library queue controls")
+	}
+	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("Playlist Editor")) {
+		t.Fatalf("expected home page HTML to include playlist editor")
+	}
+
+	artworkRecorder := httptest.NewRecorder()
+	artworkRequest := httptest.NewRequest(http.MethodGet, "/artwork/track-1", nil)
+	server.ServeHTTP(artworkRecorder, artworkRequest)
+
+	if artworkRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from artwork route, got %d", artworkRecorder.Code)
+	}
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/channels/channel-1/now-playing", nil)
@@ -91,6 +115,9 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	}
 	if playhead.TrackID != "track-1" {
 		t.Fatalf("expected seeded track, got %s", playhead.TrackID)
+	}
+	if playhead.ArtworkURL != "/artwork/track-1" {
+		t.Fatalf("expected now playing artwork url, got %q", playhead.ArtworkURL)
 	}
 
 	tracksRecorder := httptest.NewRecorder()
@@ -112,6 +139,56 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 		t.Fatalf("expected playlist order to be preserved, got %#v", tracks)
 	}
 
+	libraryRecorder := httptest.NewRecorder()
+	libraryRequest := httptest.NewRequest(http.MethodGet, "/channels/channel-1/library", nil)
+	server.ServeHTTP(libraryRecorder, libraryRequest)
+
+	if libraryRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from library, got %d", libraryRecorder.Code)
+	}
+
+	var libraryTracks []domain.Track
+	if err := json.Unmarshal(libraryRecorder.Body.Bytes(), &libraryTracks); err != nil {
+		t.Fatalf("unmarshal library tracks: %v", err)
+	}
+	if len(libraryTracks) != 4 {
+		t.Fatalf("expected full library to include 4 tracks, got %d", len(libraryTracks))
+	}
+
+	playlistRecorder := httptest.NewRecorder()
+	playlistRequest := httptest.NewRequest(http.MethodGet, "/channels/channel-1/playlist", nil)
+	server.ServeHTTP(playlistRecorder, playlistRequest)
+
+	if playlistRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from playlist, got %d", playlistRecorder.Code)
+	}
+
+	var playlist []domain.PlaylistEntry
+	if err := json.Unmarshal(playlistRecorder.Body.Bytes(), &playlist); err != nil {
+		t.Fatalf("unmarshal playlist: %v", err)
+	}
+	if len(playlist) != 2 || playlist[0].TrackID != "track-1" || playlist[1].TrackID != "track-2" {
+		t.Fatalf("expected initial playlist order [track-1, track-2], got %#v", playlist)
+	}
+
+	playlistBody, _ := json.Marshal(map[string][]string{"track_ids": []string{"track-2", "track-3", "track-1"}})
+	replacePlaylistRecorder := httptest.NewRecorder()
+	replacePlaylistRequest := httptest.NewRequest(http.MethodPut, "/channels/channel-1/playlist", bytes.NewReader(playlistBody))
+	replacePlaylistRequest.Header.Set("Content-Type", "application/json")
+	server.ServeHTTP(replacePlaylistRecorder, replacePlaylistRequest)
+
+	if replacePlaylistRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from replace playlist, got %d", replacePlaylistRecorder.Code)
+	}
+
+	var replacedPlaylist []domain.PlaylistEntry
+	if err := json.Unmarshal(replacePlaylistRecorder.Body.Bytes(), &replacedPlaylist); err != nil {
+		t.Fatalf("unmarshal replaced playlist: %v", err)
+	}
+	if len(replacedPlaylist) != 3 || replacedPlaylist[0].TrackID != "track-2" || replacedPlaylist[1].TrackID != "track-3" || replacedPlaylist[2].TrackID != "track-1" {
+		t.Fatalf("expected replaced playlist order [track-2, track-3, track-1], got %#v", replacedPlaylist)
+	}
+
 	stateRecorder := httptest.NewRecorder()
 	stateRequest := httptest.NewRequest(http.MethodGet, "/channels/channel-1/state", nil)
 	server.ServeHTTP(stateRecorder, stateRequest)
@@ -124,11 +201,11 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	if err := json.Unmarshal(stateRecorder.Body.Bytes(), &stateSnapshot); err != nil {
 		t.Fatalf("unmarshal state snapshot: %v", err)
 	}
-	if stateSnapshot.NowPlaying.TrackID != "track-1" {
-		t.Fatalf("expected state now playing track-1, got %s", stateSnapshot.NowPlaying.TrackID)
+	if stateSnapshot.NowPlaying.TrackID != "track-2" {
+		t.Fatalf("expected state now playing reset to track-2, got %s", stateSnapshot.NowPlaying.TrackID)
 	}
-	if stateSnapshot.NextTrack == nil || stateSnapshot.NextTrack.TrackID != "track-2" {
-		t.Fatalf("expected next track track-2 in initial snapshot, got %#v", stateSnapshot.NextTrack)
+	if stateSnapshot.NextTrack == nil || stateSnapshot.NextTrack.TrackID != "track-3" {
+		t.Fatalf("expected next track track-3 after playlist replace, got %#v", stateSnapshot.NextTrack)
 	}
 
 	body, _ := json.Marshal(map[string]string{"track_id": "track-3"})

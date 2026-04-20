@@ -129,6 +129,32 @@ func TestMoveQueueItemReordersEntries(t *testing.T) {
 	}
 }
 
+func TestReplacePlaylistPersistsNewOrderAndResetsCurrentTrack(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 19, 12, 3, 0, 0, time.UTC)
+	service := newTestService(t, now)
+
+	playlist, err := service.ReplacePlaylist(context.Background(), "channel-1", []string{"track-2", "track-1", "track-3"})
+	if err != nil {
+		t.Fatalf("replace playlist: %v", err)
+	}
+	if len(playlist) != 3 {
+		t.Fatalf("expected 3 playlist entries, got %d", len(playlist))
+	}
+	if playlist[0].TrackID != "track-2" || playlist[1].TrackID != "track-1" || playlist[2].TrackID != "track-3" {
+		t.Fatalf("expected persisted playlist order [track-2, track-1, track-3], got %#v", playlist)
+	}
+
+	playhead, err := service.CurrentNow(context.Background(), "channel-1")
+	if err != nil {
+		t.Fatalf("current now: %v", err)
+	}
+	if playhead.TrackID != "track-2" {
+		t.Fatalf("expected current track to reset to new playlist head, got %s", playhead.TrackID)
+	}
+}
+
 func newTestService(t *testing.T, now time.Time) *Service {
 	t.Helper()
 

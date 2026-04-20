@@ -61,6 +61,7 @@ func (s *Service) Queue(ctx context.Context, channelID string) ([]domain.QueueEn
 			Album:      track.Album,
 			DurationMs: track.DurationMs,
 			SourceType: track.SourceType,
+			ArtworkURL: track.ArtworkURL,
 		})
 	}
 	return entries, nil
@@ -83,6 +84,67 @@ func (s *Service) Tracks(ctx context.Context, channelID string) ([]domain.Track,
 	return tracks, nil
 }
 
+func (s *Service) LibraryTracks(ctx context.Context) ([]domain.Track, error) {
+	return s.source.ListTracks(ctx)
+}
+
+func (s *Service) Playlist(ctx context.Context, channelID string) ([]domain.PlaylistEntry, error) {
+	state, err := s.store.GetChannelState(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+
+	entries := make([]domain.PlaylistEntry, 0, len(state.PlaylistTrackIDs))
+	for index, trackID := range state.PlaylistTrackIDs {
+		track, err := s.source.GetTrack(ctx, trackID)
+		if err != nil {
+			return nil, err
+		}
+		entries = append(entries, domain.PlaylistEntry{
+			TrackID:    track.ID,
+			Position:   index + 1,
+			Title:      track.Title,
+			Artist:     track.Artist,
+			Album:      track.Album,
+			DurationMs: track.DurationMs,
+			SourceType: track.SourceType,
+			ArtworkURL: track.ArtworkURL,
+		})
+	}
+	return entries, nil
+}
+
+func (s *Service) ReplacePlaylist(ctx context.Context, channelID string, trackIDs []string) ([]domain.PlaylistEntry, error) {
+	state, err := s.store.GetChannelState(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, trackID := range trackIDs {
+		track, err := s.source.GetTrack(ctx, trackID)
+		if err != nil {
+			return nil, err
+		}
+		if track.ID == "" {
+			return nil, errors.New("track not found")
+		}
+	}
+
+	state.PlaylistTrackIDs = append([]string(nil), trackIDs...)
+	state.Channel.PlaylistCursor = 0
+	if len(trackIDs) == 0 {
+		state.Channel.CurrentTrackID = ""
+	} else {
+		state.Channel.CurrentTrackID = trackIDs[0]
+		state.Channel.StartedAt = s.clock()
+	}
+
+	if err := s.store.UpsertChannelState(ctx, state); err != nil {
+		return nil, err
+	}
+	return s.Playlist(ctx, channelID)
+}
+
 func (s *Service) Enqueue(ctx context.Context, channelID, trackID string) (domain.QueueItem, error) {
 	if _, err := s.source.GetTrack(ctx, trackID); err != nil {
 		return domain.QueueItem{}, err
@@ -92,6 +154,17 @@ func (s *Service) Enqueue(ctx context.Context, channelID, trackID string) (domai
 
 func (s *Service) RemoveQueueItem(ctx context.Context, channelID, queueItemID string) error {
 	return s.store.RemoveQueueItem(ctx, channelID, queueItemID)
+}
+
+func (s *Service) ArtworkPath(ctx context.Context, trackID string) (string, error) {
+	track, err := s.source.GetTrack(ctx, trackID)
+	if err != nil {
+		return "", err
+	}
+	if track.ArtworkPath == "" {
+		return "", errors.New("artwork not found")
+	}
+	return track.ArtworkPath, nil
 }
 
 func (s *Service) MoveQueueItem(ctx context.Context, channelID, queueItemID string, position int) ([]domain.QueueEntry, error) {
@@ -177,6 +250,7 @@ func (s *Service) Skip(ctx context.Context, channelID string) (domain.PlayheadSt
 		ElapsedMs:  0,
 		StartedAt:  now,
 		SourceType: nextTrack.SourceType,
+		ArtworkURL: nextTrack.ArtworkURL,
 	}, nil
 }
 
@@ -209,6 +283,7 @@ func (s *Service) State(ctx context.Context, channelID string) (domain.ChannelSt
 			Album:      nextTrack.Album,
 			DurationMs: nextTrack.DurationMs,
 			SourceType: nextTrack.SourceType,
+			ArtworkURL: nextTrack.ArtworkURL,
 		}
 	}
 
@@ -290,6 +365,7 @@ func (s *Service) Current(ctx context.Context, channelID string, at time.Time) (
 		ElapsedMs:  elapsed,
 		StartedAt:  state.Channel.StartedAt.UTC(),
 		SourceType: currentTrack.SourceType,
+		ArtworkURL: currentTrack.ArtworkURL,
 	}, nil
 }
 

@@ -51,9 +51,19 @@ func (p *FFprobeProber) Probe(ctx context.Context, path string) (Metadata, error
 	}
 
 	return Metadata{
-		Title:      payload.Format.Tags["title"],
-		Artist:     payload.Format.Tags["artist"],
-		Album:      payload.Format.Tags["album"],
+		Title:      payload.Format.Tags["TITLE"],
+		Artist:     payload.Format.Tags["ARTIST"],
+		Album:      payload.Format.Tags["ALBUM"],
+		Disc:       firstTag(payload.Format.Tags, "DISC", "DISCNUMBER", "disc", "discnumber"),
 		DurationMs: int64(seconds * 1000),
 	}, nil
+}
+
+func firstTag(tags map[string]string, keys ...string) string {
+	for _, key := range keys {
+		if value := tags[key]; value != "" {
+			return value
+		}
+	}
+	return ""
 }

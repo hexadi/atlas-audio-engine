@@ -155,3 +155,99 @@ func TestGetTrackUsesCachedLibraryAfterInitialScan(t *testing.T) {
 		t.Fatalf("expected cached get track to avoid extra probe calls, got %d", callCount)
 	}
 }
+
+func TestListTracksUsesSiblingCoverArtwork(t *testing.T) {
+	t.Parallel()
+
+	mediaDir := t.TempDir()
+	albumDir := filepath.Join(mediaDir, "album")
+	songPath := filepath.Join(albumDir, "sample-song.mp3")
+	coverPath := filepath.Join(albumDir, "cover.jpg")
+	if err := os.MkdirAll(albumDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(songPath, []byte("not-real-audio"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := os.WriteFile(coverPath, []byte("cover"), 0o644); err != nil {
+		t.Fatalf("write cover: %v", err)
+	}
+
+	absolutePath, err := filepath.Abs(songPath)
+	if err != nil {
+		t.Fatalf("abs song: %v", err)
+	}
+	absoluteCoverPath, err := filepath.Abs(coverPath)
+	if err != nil {
+		t.Fatalf("abs cover: %v", err)
+	}
+
+	adapter := NewAdapter(mediaDir, fakeProber{
+		metadataByPath: map[string]Metadata{
+			absolutePath: {
+				Title:      "Sample Song",
+				Artist:     "Test Artist",
+				DurationMs: 123000,
+			},
+		},
+	})
+
+	tracks, err := adapter.ListTracks(context.Background())
+	if err != nil {
+		t.Fatalf("list tracks: %v", err)
+	}
+
+	if tracks[0].ArtworkPath != absoluteCoverPath {
+		t.Fatalf("expected sibling cover path %q, got %q", absoluteCoverPath, tracks[0].ArtworkPath)
+	}
+	if tracks[0].ArtworkURL != "/artwork/"+tracks[0].ID {
+		t.Fatalf("expected artwork url for track, got %q", tracks[0].ArtworkURL)
+	}
+}
+
+func TestListTracksUsesParentCoverForDiscMetadata(t *testing.T) {
+	t.Parallel()
+
+	mediaDir := t.TempDir()
+	discDir := filepath.Join(mediaDir, "album", "CD1")
+	songPath := filepath.Join(discDir, "sample-song.mp3")
+	parentCoverPath := filepath.Join(mediaDir, "album", "cover.jpg")
+	if err := os.MkdirAll(discDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(songPath, []byte("not-real-audio"), 0o644); err != nil {
+		t.Fatalf("write file: %v", err)
+	}
+	if err := os.WriteFile(parentCoverPath, []byte("cover"), 0o644); err != nil {
+		t.Fatalf("write parent cover: %v", err)
+	}
+
+	absolutePath, err := filepath.Abs(songPath)
+	if err != nil {
+		t.Fatalf("abs song: %v", err)
+	}
+	absoluteCoverPath, err := filepath.Abs(parentCoverPath)
+	if err != nil {
+		t.Fatalf("abs cover: %v", err)
+	}
+
+	adapter := NewAdapter(mediaDir, fakeProber{
+		metadataByPath: map[string]Metadata{
+			absolutePath: {
+				Title:      "Sample Song",
+				Artist:     "Test Artist",
+				Disc:       "1",
+				DurationMs: 123000,
+			},
+		},
+	})
+
+	tracks, err := adapter.ListTracks(context.Background())
+	if err != nil {
+		t.Fatalf("list tracks: %v", err)
+	}
+
+	if tracks[0].ArtworkPath != absoluteCoverPath {
+		t.Fatalf("expected parent cover path %q, got %q", absoluteCoverPath, tracks[0].ArtworkPath)
+	}
+}
