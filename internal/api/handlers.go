@@ -30,6 +30,17 @@ type enqueueRequest struct {
 	TrackID string `json:"track_id"`
 }
 
+type createChannelRequest struct {
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	TrackIDs []string `json:"track_ids"`
+}
+
+type updateChannelRequest struct {
+	Name    *string `json:"name"`
+	Enabled *bool   `json:"enabled"`
+}
+
 type moveQueueItemRequest struct {
 	Position int `json:"position"`
 }
@@ -38,12 +49,50 @@ type replacePlaylistRequest struct {
 	TrackIDs []string `json:"track_ids"`
 }
 
+type broadcastStatusResponse struct {
+	ChannelID      string               `json:"channel_id"`
+	Mode           string               `json:"mode"`
+	Video          broadcastVideoStatus `json:"video"`
+	Audio          broadcastAudioStatus `json:"audio"`
+	URLs           broadcastURLs        `json:"urls"`
+	NowPlaying     media.VideoMetadata  `json:"now_playing"`
+	HasStreamer    bool                 `json:"has_streamer"`
+	RecommendedURL string               `json:"recommended_url"`
+}
+
+type broadcastVideoStatus struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
+	FPS    int `json:"fps"`
+}
+
+type broadcastAudioStatus struct {
+	Format     string `json:"format"`
+	SampleRate int    `json:"sample_rate"`
+	Channels   int    `json:"channels"`
+}
+
+type broadcastURLs struct {
+	BroadcastTS string `json:"broadcast_ts"`
+	StreamTS    string `json:"stream_ts"`
+	MP3         string `json:"mp3"`
+	PCM         string `json:"pcm"`
+}
+
 func (h *Handler) Health(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *Handler) Home(c echo.Context) error {
 	html, err := homePageHTML()
+	if err != nil {
+		return err
+	}
+	return c.HTML(http.StatusOK, html)
+}
+
+func (h *Handler) Dashboard(c echo.Context) error {
+	html, err := dashboardPageHTML()
 	if err != nil {
 		return err
 	}
@@ -64,6 +113,51 @@ func (h *Handler) ListChannels(c echo.Context) error {
 		return err
 	}
 	return c.JSON(http.StatusOK, channels)
+}
+
+func (h *Handler) CreateChannel(c echo.Context) error {
+	var request createChannelRequest
+	if err := c.Bind(&request); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if strings.TrimSpace(request.Name) == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "channel name is required")
+	}
+
+	channel, err := h.service.CreateChannel(c.Request().Context(), request.ID, request.Name, request.TrackIDs)
+	if err != nil {
+		if errors.Is(err, scheduler.ErrChannelExists) {
+			return echo.NewHTTPError(http.StatusConflict, "channel already exists")
+		}
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	return c.JSON(http.StatusCreated, channel)
+}
+
+func (h *Handler) UpdateChannel(c echo.Context) error {
+	var request updateChannelRequest
+	if err := c.Bind(&request); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if request.Name == nil && request.Enabled == nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "at least one field is required")
+	}
+
+	channel, err := h.service.UpdateChannel(c.Request().Context(), c.Param("id"), request.Name, request.Enabled)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	return c.JSON(http.StatusOK, channel)
+}
+
+func (h *Handler) DeleteChannel(c echo.Context) error {
+	if err := h.service.DeleteChannel(c.Request().Context(), c.Param("id")); err != nil {
+		if errors.Is(err, scheduler.ErrCannotDeleteLastChannel) {
+			return echo.NewHTTPError(http.StatusConflict, err.Error())
+		}
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
 func (h *Handler) Tracks(c echo.Context) error {
@@ -112,6 +206,14 @@ func (h *Handler) ReplacePlaylist(c echo.Context) error {
 	playlist, err := h.service.ReplacePlaylist(c.Request().Context(), c.Param("id"), request.TrackIDs)
 	if err != nil {
 		return err
+	}
+	return c.JSON(http.StatusOK, playlist)
+}
+
+func (h *Handler) ShufflePlaylist(c echo.Context) error {
+	playlist, err := h.service.ShufflePlaylist(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	return c.JSON(http.StatusOK, playlist)
 }
@@ -280,6 +382,83 @@ func (h *Handler) StreamMP3(c echo.Context) error {
 	}
 }
 
+func (h *Handler) StreamPCM(c echo.Context) error {
+	if h.streamer == nil {
+		return echo.NewHTTPError(http.StatusNotImplemented, "audio streaming is not configured")
+	}
+
+	channelID := c.Param("id")
+	c.Response().Header().Set(echo.HeaderContentType, "audio/L16; rate=48000; channels=2")
+	c.Response().Header().Set("Cache-Control", "no-store")
+	c.Response().Header().Set("X-Accel-Buffering", "no")
+	c.Response().WriteHeader(http.StatusOK)
+
+	return h.streamAudioSegments(c, channelID, func(ctx context.Context, inputPath string, startSeconds float64) error {
+		return h.streamer.StreamPCM(ctx, inputPath, startSeconds, c.Response())
+	}, "stream.pcm")
+}
+
+func (h *Handler) streamAudioSegments(c echo.Context, channelID string, streamSegment func(context.Context, string, float64) error, eventName string) error {
+	once := c.QueryParam("once") == "1" || strings.EqualFold(c.QueryParam("once"), "true")
+	firstSegment := true
+
+	for {
+		playhead, err := h.service.CurrentNow(c.Request().Context(), channelID)
+		if err != nil {
+			return nil
+		}
+
+		playable, err := h.service.ResolvePlayable(c.Request().Context(), channelID, playhead.TrackID)
+		if err != nil {
+			log.Printf("event=%s.resolve_error channel_id=%s track_id=%s error=%q", eventName, channelID, playhead.TrackID, err)
+			return nil
+		}
+
+		startSeconds := float64(playhead.ElapsedMs) / 1000
+		if firstSegment {
+			if value := c.QueryParam("start"); value != "" {
+				parsed, err := strconv.ParseFloat(value, 64)
+				if err != nil || parsed < 0 {
+					return nil
+				}
+				startSeconds = parsed
+			}
+		}
+
+		segmentCtx, cancelSegment := context.WithCancel(c.Request().Context())
+		go h.cancelSegmentWhenPlayheadChanges(segmentCtx, cancelSegment, channelID, playhead.TrackID, playhead.StartedAt)
+
+		log.Printf("event=%s.segment channel_id=%s track_id=%s start_seconds=%.3f", eventName, channelID, playhead.TrackID, startSeconds)
+		err = streamSegment(segmentCtx, playable.Path, startSeconds)
+		cancelSegment()
+		if err != nil {
+			if c.Request().Context().Err() != nil {
+				return nil
+			}
+			if segmentCtx.Err() != nil || errors.Is(err, context.Canceled) {
+				firstSegment = false
+				continue
+			}
+			log.Printf("event=%s.error channel_id=%s track_id=%s error=%q", eventName, channelID, playhead.TrackID, err)
+			return nil
+		}
+
+		if flusher, ok := c.Response().Writer.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		if once {
+			return nil
+		}
+
+		firstSegment = false
+		select {
+		case <-c.Request().Context().Done():
+			return nil
+		default:
+		}
+	}
+}
+
 func (h *Handler) StreamVideo(c echo.Context) error {
 	if h.streamer == nil {
 		return echo.NewHTTPError(http.StatusNotImplemented, "video streaming is not configured")
@@ -366,7 +545,7 @@ func (h *Handler) StreamVideo(c echo.Context) error {
 		select {
 		case <-c.Request().Context().Done():
 			return nil
-		case <-time.After(150 * time.Millisecond):
+		default:
 		}
 	}
 }
@@ -383,7 +562,7 @@ func (h *Handler) BroadcastVideo(c echo.Context) error {
 	c.Response().Header().Set("X-Atlas-Broadcast-Mode", "persistent-visual-encoder")
 	c.Response().WriteHeader(http.StatusOK)
 
-	audioURL := streamAudioURL(c, channelID)
+	audioURL := streamPCMURL(c, channelID)
 	metadataProvider := func(ctx context.Context) (media.VideoMetadata, error) {
 		state, err := h.service.State(ctx, channelID)
 		if err != nil {
@@ -414,12 +593,56 @@ func (h *Handler) BroadcastVideo(c echo.Context) error {
 	return nil
 }
 
-func streamAudioURL(c echo.Context, channelID string) string {
+func (h *Handler) BroadcastStatus(c echo.Context) error {
+	channelID := c.Param("id")
+	state, err := h.service.State(c.Request().Context(), channelID)
+	if err != nil {
+		return err
+	}
+
+	metadata := media.VideoMetadata{
+		Title:      state.NowPlaying.Title,
+		Artist:     state.NowPlaying.Artist,
+		DurationMs: state.NowPlaying.DurationMs,
+		ElapsedMs:  state.NowPlaying.ElapsedMs,
+	}
+	if state.NextTrack != nil {
+		metadata.NextTitle = state.NextTrack.Title
+		metadata.NextArtist = state.NextTrack.Artist
+	}
+	if artworkPath, err := h.service.ArtworkPath(c.Request().Context(), state.NowPlaying.TrackID); err == nil {
+		metadata.ArtworkPath = artworkPath
+	}
+
+	urls := broadcastURLs{
+		BroadcastTS: absoluteChannelURL(c, channelID, "broadcast.ts"),
+		StreamTS:    absoluteChannelURL(c, channelID, "stream.ts"),
+		MP3:         absoluteChannelURL(c, channelID, "stream.mp3"),
+		PCM:         absoluteChannelURL(c, channelID, "stream.pcm"),
+	}
+
+	return c.JSON(http.StatusOK, broadcastStatusResponse{
+		ChannelID:      channelID,
+		Mode:           "persistent-visual-encoder",
+		Video:          broadcastVideoStatus{Width: 1280, Height: 720, FPS: 24},
+		Audio:          broadcastAudioStatus{Format: "s16le", SampleRate: 48000, Channels: 2},
+		URLs:           urls,
+		NowPlaying:     metadata,
+		HasStreamer:    h.streamer != nil,
+		RecommendedURL: urls.BroadcastTS,
+	})
+}
+
+func streamPCMURL(c echo.Context, channelID string) string {
+	return absoluteChannelURL(c, channelID, "stream.pcm")
+}
+
+func absoluteChannelURL(c echo.Context, channelID, endpoint string) string {
 	scheme := "http"
 	if c.IsTLS() {
 		scheme = "https"
 	}
-	return fmt.Sprintf("%s://%s/channels/%s/stream.mp3", scheme, c.Request().Host, channelID)
+	return fmt.Sprintf("%s://%s/channels/%s/%s", scheme, c.Request().Host, channelID, endpoint)
 }
 
 func videoBufferBytes(c echo.Context) int {

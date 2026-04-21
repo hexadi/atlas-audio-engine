@@ -7,26 +7,30 @@ import (
 )
 
 type Config struct {
-	ListenAddress string
-	DatabasePath  string
-	MediaDir      string
-	ChannelID     string
-	ChannelName   string
-	FFmpegPath    string
-	VideoFontPath string
+	ListenAddress     string
+	DatabasePath      string
+	MediaDir          string
+	ChannelID         string
+	ChannelName       string
+	FFmpegPath        string
+	VideoFontPath     string
+	DashboardUsername string
+	DashboardPassword string
 }
 
 func Load() Config {
 	loadDotEnv(".env")
 
 	return Config{
-		ListenAddress: getEnv("ATLAS_LISTEN_ADDR", ":8080"),
-		DatabasePath:  getEnv("ATLAS_DATABASE_PATH", "atlas.db"),
-		MediaDir:      getEnv("ATLAS_MEDIA_DIR", "./testdata/media"),
-		ChannelID:     getEnv("ATLAS_CHANNEL_ID", "local-library"),
-		ChannelName:   getEnv("ATLAS_CHANNEL_NAME", "Local Library"),
-		FFmpegPath:    getEnv("ATLAS_FFMPEG_PATH", "ffmpeg"),
-		VideoFontPath: getEnv("ATLAS_VIDEO_FONT_PATH", ""),
+		ListenAddress:     getEnv("ATLAS_LISTEN_ADDR", ":8080"),
+		DatabasePath:      getEnv("ATLAS_DATABASE_PATH", "atlas.db"),
+		MediaDir:          getEnv("ATLAS_MEDIA_DIR", "./testdata/media"),
+		ChannelID:         getEnv("ATLAS_CHANNEL_ID", "local-library"),
+		ChannelName:       getEnv("ATLAS_CHANNEL_NAME", "Local Library"),
+		FFmpegPath:        getEnv("ATLAS_FFMPEG_PATH", "ffmpeg"),
+		VideoFontPath:     getEnv("ATLAS_VIDEO_FONT_PATH", ""),
+		DashboardUsername: getEnv("ATLAS_DASHBOARD_USERNAME", "admin"),
+		DashboardPassword: getEnv("ATLAS_DASHBOARD_PASSWORD", "atlas"),
 	}
 }
 

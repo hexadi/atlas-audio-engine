@@ -2,6 +2,10 @@ package ffmpeg
 
 import (
 	"bytes"
+	"image"
+	"image/color"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -107,5 +111,59 @@ func TestVideoFilterIncludesProgressWhenDurationIsKnown(t *testing.T) {
 
 	if !strings.Contains(filter, "drawbox=x=620:y=610") {
 		t.Fatalf("expected video filter to include progress bar, got %q", filter)
+	}
+}
+
+func TestFrameRendererReusesScaledArtworkForSamePath(t *testing.T) {
+	t.Parallel()
+
+	renderer := newFrameRenderer()
+	renderer.scaledArtwork = image.NewRGBA(image.Rect(0, 0, artSize, artSize))
+	renderer.scaledArtwork.SetRGBA(0, 0, color.RGBA{R: 255, A: 255})
+	renderer.lastArtworkPath = "cover.jpg"
+	firstArtwork := renderer.scaledArtwork
+
+	frame := renderer.Render(media.VideoMetadata{
+		ArtworkPath: "cover.jpg",
+		DurationMs:  1000,
+		ElapsedMs:   500,
+	})
+
+	if renderer.scaledArtwork != firstArtwork {
+		t.Fatalf("expected renderer to reuse scaled artwork when path is unchanged")
+	}
+	if frame.Bounds().Dx() != frameWidth || frame.Bounds().Dy() != frameHeight {
+		t.Fatalf("expected frame size %dx%d, got %dx%d", frameWidth, frameHeight, frame.Bounds().Dx(), frame.Bounds().Dy())
+	}
+}
+
+func TestWriteStableTextFileNeverLeavesEmptyFile(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "artist.txt")
+	if err := writeStableTextFile(path, "Artist"); err != nil {
+		t.Fatalf("write stable text file: %v", err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read stable text file: %v", err)
+	}
+	if len(content) != textFileSize {
+		t.Fatalf("expected padded file size %d, got %d", textFileSize, len(content))
+	}
+	if !strings.HasPrefix(string(content), "Artist") {
+		t.Fatalf("expected file to start with content, got %q", string(content[:16]))
+	}
+
+	if err := writeStableTextFile(path, "A"); err != nil {
+		t.Fatalf("rewrite stable text file: %v", err)
+	}
+	content, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read rewritten stable text file: %v", err)
+	}
+	if strings.TrimSpace(string(content)) != "A" {
+		t.Fatalf("expected rewritten content to clear old bytes, got %q", strings.TrimSpace(string(content)))
 	}
 }

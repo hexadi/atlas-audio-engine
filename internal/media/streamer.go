@@ -7,6 +7,7 @@ import (
 
 type AudioStreamer interface {
 	StreamMP3(ctx context.Context, inputPath string, startSeconds float64, output io.Writer) error
+	StreamPCM(ctx context.Context, inputPath string, startSeconds float64, output io.Writer) error
 }
 
 type VideoMetadata struct {

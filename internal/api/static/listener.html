@@ -1,0 +1,774 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atlas Radio</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07101f;
+      --panel: rgba(12, 22, 42, 0.82);
+      --line: rgba(255, 255, 255, 0.1);
+      --text: #f4f8ff;
+      --muted: #9aa9c8;
+      --accent: #6ed6ff;
+      --accent-2: #7cffbf;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      min-height: 100svh;
+      font-family: "Segoe UI", "Aptos", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 20% 12%, rgba(110, 214, 255, 0.22), transparent 28%),
+        radial-gradient(circle at 82% 78%, rgba(124, 255, 191, 0.14), transparent 30%),
+        linear-gradient(150deg, #040914 0%, #101b32 54%, #050b16 100%);
+      display: grid;
+      place-items: center;
+      padding: clamp(16px, 4vw, 24px);
+    }
+
+    .player {
+      width: min(620px, 100%);
+      padding: clamp(24px, 5vw, 42px);
+      border: 1px solid var(--line);
+      border-radius: 32px;
+      background: var(--panel);
+      box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
+      backdrop-filter: blur(18px);
+    }
+
+    .cover-wrap {
+      width: min(260px, 70vw);
+      margin: 0 auto 26px;
+      aspect-ratio: 1;
+      border-radius: 30px;
+      padding: 10px;
+      background: linear-gradient(145deg, rgba(255,255,255,0.18), rgba(255,255,255,0.04));
+      box-shadow: 0 22px 62px rgba(0, 0, 0, 0.34);
+    }
+
+    .cover,
+    .fallback-cover {
+      width: 100%;
+      height: 100%;
+      border-radius: 22px;
+    }
+
+    .cover {
+      display: block;
+      object-fit: cover;
+    }
+
+    .cover.is-hidden,
+    .fallback-cover.is-hidden {
+      display: none;
+    }
+
+    .fallback-cover {
+      display: grid;
+      place-items: center;
+      color: rgba(255, 255, 255, 0.76);
+      font-size: 58px;
+      font-weight: 900;
+      background:
+        radial-gradient(circle at 35% 25%, rgba(255, 255, 255, 0.22), transparent 34%),
+        linear-gradient(135deg, rgba(110, 214, 255, 0.36), rgba(124, 255, 191, 0.20));
+    }
+
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .title {
+      margin: 0;
+      font-size: clamp(32px, 8vw, 58px);
+      line-height: 0.98;
+      text-align: center;
+      overflow-wrap: anywhere;
+      text-wrap: balance;
+    }
+
+    .artist {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: clamp(18px, 4vw, 26px);
+      text-align: center;
+    }
+
+    .progress-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 30px;
+      color: var(--muted);
+      font-size: 13px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .bar {
+      height: 14px;
+      margin-top: 10px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.11);
+    }
+
+    .fill {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      transition: width 0.3s linear;
+    }
+
+    .next {
+      margin-top: 24px;
+      padding: 16px 18px;
+      border: 1px solid rgba(255, 255, 255, 0.07);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    .next-title {
+      margin: 8px 0 4px;
+      font-size: 22px;
+      font-weight: 850;
+    }
+
+    .next-artist {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .controls {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-top: 28px;
+      flex-wrap: wrap;
+    }
+
+    .channel-picker {
+      display: grid;
+      gap: 8px;
+      margin-top: 22px;
+    }
+
+    .channel-select {
+      width: 100%;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 999px;
+      padding: 12px 14px;
+      color: var(--text);
+      background: rgba(0, 0, 0, 0.22);
+      outline: none;
+      font: inherit;
+    }
+
+    button {
+      appearance: none;
+      border: 0;
+      border-radius: 999px;
+      padding: 13px 20px;
+      color: #06111f;
+      background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      font-weight: 900;
+      cursor: pointer;
+      box-shadow: 0 12px 30px rgba(110, 214, 255, 0.2);
+    }
+
+    .secondary {
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: none;
+    }
+
+    .status {
+      min-height: 20px;
+      margin-top: 18px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 14px;
+    }
+
+    audio {
+      display: none;
+    }
+
+    @media (max-width: 520px) {
+      body {
+        align-items: start;
+        padding: 14px;
+      }
+
+      .player {
+        min-height: calc(100svh - 28px);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 20px;
+        border-radius: 24px;
+      }
+
+      .cover-wrap {
+        width: min(210px, 58vw);
+        margin-bottom: 20px;
+        border-radius: 24px;
+        padding: 8px;
+      }
+
+      .cover,
+      .fallback-cover {
+        border-radius: 18px;
+      }
+
+      .fallback-cover {
+        font-size: 46px;
+      }
+
+      .eyebrow {
+        margin-bottom: 10px;
+        font-size: 11px;
+        letter-spacing: 0.14em;
+      }
+
+      .title {
+        font-size: clamp(30px, 11vw, 44px);
+        line-height: 1;
+      }
+
+      .artist {
+        margin-top: 10px;
+        font-size: clamp(17px, 5vw, 22px);
+      }
+
+      .progress-row {
+        margin-top: 24px;
+        font-size: 12px;
+      }
+
+      .bar {
+        height: 12px;
+      }
+
+      .next {
+        margin-top: 20px;
+        padding: 14px 16px;
+        border-radius: 18px;
+      }
+
+      .next-title {
+        font-size: 19px;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        margin-top: 22px;
+      }
+
+      button {
+        width: 100%;
+        padding: 13px 16px;
+      }
+
+      .status {
+        margin-top: 14px;
+        font-size: 13px;
+      }
+    }
+
+    @media (max-width: 340px) {
+      .player {
+        padding: 16px;
+      }
+
+      .cover-wrap {
+        width: min(180px, 56vw);
+      }
+
+      .title {
+        font-size: clamp(27px, 10vw, 36px);
+      }
+
+      .artist,
+      .next-artist {
+        font-size: 15px;
+      }
+
+      .next-title {
+        font-size: 17px;
+      }
+    }
+
+    @media (max-height: 680px) and (orientation: landscape) {
+      body {
+        align-items: start;
+        padding: 12px;
+      }
+
+      .player {
+        width: min(920px, 100%);
+        min-height: calc(100svh - 24px);
+        display: grid;
+        grid-template-columns: minmax(140px, 30vh) minmax(0, 1fr);
+        grid-template-areas:
+          "cover identity"
+          "cover progress"
+          "cover next"
+          "cover controls"
+          "cover status";
+        gap: 12px 22px;
+        align-content: center;
+        padding: 18px;
+        border-radius: 24px;
+      }
+
+      .cover-wrap {
+        grid-area: cover;
+        width: 100%;
+        align-self: center;
+        margin: 0;
+      }
+
+      .eyebrow,
+      .title,
+      .artist {
+        text-align: left;
+      }
+
+      .eyebrow {
+        grid-area: identity;
+        margin: 0 0 8px;
+        align-self: end;
+      }
+
+      .title {
+        grid-area: identity;
+        align-self: center;
+        margin-top: 20px;
+        font-size: clamp(30px, 7vh, 52px);
+      }
+
+      .artist {
+        grid-area: identity;
+        align-self: end;
+        margin-top: 0;
+        padding-top: clamp(54px, 10vh, 72px);
+        font-size: clamp(17px, 4vh, 24px);
+      }
+
+      .progress-row {
+        grid-area: progress;
+        margin-top: 0;
+      }
+
+      .bar {
+        grid-area: progress;
+        align-self: end;
+        margin-top: 28px;
+      }
+
+      .next {
+        grid-area: next;
+        margin-top: 0;
+        padding: 12px 14px;
+      }
+
+      .next-title {
+        font-size: 18px;
+      }
+
+      .controls {
+        grid-area: controls;
+        justify-content: flex-start;
+        margin-top: 0;
+      }
+
+      .channel-picker {
+        grid-area: status;
+        margin-top: 0;
+      }
+
+      .status {
+        grid-area: status;
+        margin-top: 56px;
+        text-align: left;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="player">
+    <div class="cover-wrap">
+      <img id="cover-image" class="cover is-hidden" alt="Album artwork">
+      <div id="fallback-cover" class="fallback-cover">AA</div>
+    </div>
+
+    <p class="eyebrow">Now Playing</p>
+    <h1 id="now-title" class="title">Loading...</h1>
+    <p id="now-artist" class="artist">Connecting to channel</p>
+
+    <div class="progress-row">
+      <span>Progress</span>
+      <span id="time-display">0:00 / 0:00</span>
+    </div>
+    <div class="bar" aria-hidden="true">
+      <div id="progress-fill" class="fill"></div>
+    </div>
+
+    <section class="next">
+      <div class="label">Next Song</div>
+      <div id="next-title" class="next-title">Loading...</div>
+      <p id="next-artist" class="next-artist">Please wait</p>
+    </section>
+
+    <div class="controls">
+      <button id="play-button" type="button">Play</button>
+      <button id="stop-button" type="button" class="secondary">Stop</button>
+    </div>
+    <div class="channel-picker">
+      <label class="label" for="channel-select">Channel</label>
+      <select id="channel-select" class="channel-select" aria-label="Select channel"></select>
+    </div>
+    <audio id="listen-player" preload="none"></audio>
+    <div id="status" class="status">Waiting for state...</div>
+  </main>
+
+  <script>
+    const elements = {
+      title: document.getElementById('now-title'),
+      artist: document.getElementById('now-artist'),
+      time: document.getElementById('time-display'),
+      fill: document.getElementById('progress-fill'),
+      nextTitle: document.getElementById('next-title'),
+      nextArtist: document.getElementById('next-artist'),
+      playButton: document.getElementById('play-button'),
+      stopButton: document.getElementById('stop-button'),
+      channelSelect: document.getElementById('channel-select'),
+      listenPlayer: document.getElementById('listen-player'),
+      status: document.getElementById('status'),
+      coverImage: document.getElementById('cover-image'),
+      fallbackCover: document.getElementById('fallback-cover'),
+    };
+
+    let channelId = null;
+    let channels = [];
+    let snapshot = null;
+    let stateSocket = null;
+    let wantsPlayback = false;
+    let reconnectTimer = null;
+    let displayed = { title: null, artist: null, artworkUrl: null };
+
+    function formatTime(ms) {
+      const totalSeconds = Math.max(0, Math.floor((ms || 0) / 1000));
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return minutes + ':' + String(seconds).padStart(2, '0');
+    }
+
+    async function loadChannels() {
+      const response = await fetch('/channels');
+      if (!response.ok) throw new Error('Unable to load channels');
+      channels = await response.json();
+      if (!Array.isArray(channels) || channels.length === 0) throw new Error('No channels available');
+      renderChannelSelect();
+      return channels;
+    }
+
+    function renderChannelSelect() {
+      elements.channelSelect.innerHTML = '';
+      channels.forEach((channel) => {
+        const option = document.createElement('option');
+        option.value = channel.id;
+        option.textContent = channel.name || channel.id;
+        elements.channelSelect.appendChild(option);
+      });
+      if (channelId) {
+        elements.channelSelect.value = channelId;
+      }
+    }
+
+    async function ensureChannelId() {
+      if (channelId) return channelId;
+      await loadChannels();
+      channelId = channels[0].id;
+      elements.channelSelect.value = channelId;
+      connectStateSocket();
+      return channelId;
+    }
+
+    function resetDisplayedState() {
+      snapshot = null;
+      displayed = { title: null, artist: null, artworkUrl: null };
+      elements.title.textContent = 'Loading...';
+      elements.artist.textContent = 'Connecting to channel';
+      elements.nextTitle.textContent = 'Loading...';
+      elements.nextArtist.textContent = 'Please wait';
+      elements.time.textContent = '0:00 / 0:00';
+      elements.fill.style.width = '0%';
+      elements.coverImage.removeAttribute('src');
+      elements.coverImage.classList.add('is-hidden');
+      elements.fallbackCover.classList.remove('is-hidden');
+    }
+
+    function closeStateSocket() {
+      if (!stateSocket) return;
+      const socket = stateSocket;
+      stateSocket = null;
+      socket.close();
+    }
+
+    async function changeChannel(nextChannelId) {
+      if (!nextChannelId || nextChannelId === channelId) return;
+      const shouldResume = wantsPlayback;
+      stopStream();
+      closeStateSocket();
+      channelId = nextChannelId;
+      elements.channelSelect.value = channelId;
+      resetDisplayedState();
+      connectStateSocket();
+      await refreshState();
+      if (shouldResume) {
+        playStream();
+      }
+    }
+
+    function streamURL() {
+      return '/channels/' + encodeURIComponent(channelId) + '/stream.mp3';
+    }
+
+    function openStream() {
+      if (!channelId || elements.listenPlayer.src) return;
+      elements.listenPlayer.src = streamURL();
+      elements.listenPlayer.load();
+    }
+
+    function playStream() {
+      wantsPlayback = true;
+      clearStreamReconnect();
+      openStream();
+      elements.listenPlayer.play().then(() => {
+        elements.playButton.textContent = 'Playing';
+        elements.status.textContent = 'Listening live.';
+        updatePlaybackState('playing');
+      }).catch(() => {
+        wantsPlayback = false;
+        elements.playButton.textContent = 'Play';
+        elements.status.textContent = 'Playback blocked. Press Play again.';
+        updatePlaybackState('paused');
+      });
+    }
+
+    function stopStream() {
+      wantsPlayback = false;
+      clearStreamReconnect();
+      elements.listenPlayer.pause();
+      elements.listenPlayer.removeAttribute('src');
+      elements.listenPlayer.load();
+      elements.playButton.textContent = 'Play';
+      elements.status.textContent = 'Stopped.';
+      updatePlaybackState('paused');
+    }
+
+    function clearStreamReconnect() {
+      if (!reconnectTimer) return;
+      window.clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+
+    function scheduleStreamReconnect(reason) {
+      if (!wantsPlayback || reconnectTimer) return;
+
+      elements.status.textContent = reason + ' Reconnecting...';
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null;
+        if (!wantsPlayback) return;
+        elements.listenPlayer.pause();
+        elements.listenPlayer.removeAttribute('src');
+        elements.listenPlayer.load();
+        playStream();
+      }, 1500);
+    }
+
+    function handleStreamWaiting() {
+      if (!wantsPlayback) return;
+      elements.status.textContent = 'Buffering live stream...';
+    }
+
+    function handleStreamPlaying() {
+      clearStreamReconnect();
+      if (!wantsPlayback) return;
+      elements.playButton.textContent = 'Playing';
+      elements.status.textContent = 'Listening live.';
+      updatePlaybackState('playing');
+    }
+
+    function handleStreamEnded() {
+      scheduleStreamReconnect('Stream ended.');
+    }
+
+    function handleStreamError() {
+      scheduleStreamReconnect('Stream interrupted.');
+    }
+
+    function render() {
+      if (!snapshot) return;
+      const now = snapshot.now_playing || {};
+      const title = now.title || 'Nothing playing';
+      const artist = now.artist || 'Unknown artist';
+      const artworkUrl = now.artwork_url || '';
+
+      if (displayed.title !== title) {
+        elements.title.textContent = title;
+        displayed.title = title;
+      }
+      if (displayed.artist !== artist) {
+        elements.artist.textContent = artist;
+        displayed.artist = artist;
+      }
+      if (displayed.artworkUrl !== artworkUrl) {
+        if (artworkUrl) {
+          elements.coverImage.src = artworkUrl;
+          elements.coverImage.classList.remove('is-hidden');
+          elements.fallbackCover.classList.add('is-hidden');
+        } else {
+          elements.coverImage.removeAttribute('src');
+          elements.coverImage.classList.add('is-hidden');
+          elements.fallbackCover.classList.remove('is-hidden');
+        }
+        displayed.artworkUrl = artworkUrl;
+      }
+
+      if (snapshot.next_track) {
+        elements.nextTitle.textContent = snapshot.next_track.title || 'Unknown track';
+        elements.nextArtist.textContent = snapshot.next_track.artist || 'Unknown artist';
+      } else {
+        elements.nextTitle.textContent = 'No next song';
+        elements.nextArtist.textContent = 'Playlist is empty';
+      }
+
+      if (wantsPlayback) openStream();
+      updateMediaSession(now);
+      renderProgress();
+    }
+
+    function renderProgress() {
+      if (!snapshot) return;
+      const now = snapshot.now_playing || {};
+      const startedAt = now.started_at ? new Date(now.started_at).getTime() : Date.now();
+      const duration = now.duration_ms || 0;
+      const elapsed = Math.min(duration, Math.max(0, Date.now() - startedAt));
+      const progress = duration > 0 ? (elapsed / duration) * 100 : 0;
+      elements.time.textContent = formatTime(elapsed) + ' / ' + formatTime(duration);
+      elements.fill.style.width = progress + '%';
+      updateMediaSessionPosition(duration, elapsed);
+    }
+
+    function updateMediaSession(now) {
+      if (!('mediaSession' in navigator)) return;
+
+      const artworkUrl = now.artwork_url || '';
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: now.title || 'Atlas Radio',
+        artist: (now.artist || 'Live channel') + " | LIVE",
+        album: now.album || 'Atlas Audio Engine Radio',
+        artwork: artworkUrl ? [
+          { src: artworkUrl, sizes: '512x512', type: 'image/jpeg' },
+        ] : [],
+      });
+
+      navigator.mediaSession.setActionHandler('play', playStream);
+      navigator.mediaSession.setActionHandler('pause', stopStream);
+      navigator.mediaSession.setActionHandler('stop', stopStream);
+      updatePlaybackState(wantsPlayback ? 'playing' : 'paused');
+    }
+
+    function updatePlaybackState(state) {
+      if (!('mediaSession' in navigator)) return;
+      navigator.mediaSession.playbackState = state;
+    }
+
+    function updateMediaSessionPosition(durationMs, elapsedMs) {
+      void durationMs;
+      void elapsedMs;
+      // Leave OS/browser media position unset so the stream behaves like live radio.
+    }
+
+    async function refreshState() {
+      await ensureChannelId();
+      const response = await fetch('/channels/' + encodeURIComponent(channelId) + '/state');
+      if (!response.ok) throw new Error('Unable to load state');
+      snapshot = await response.json();
+      render();
+      elements.status.textContent = wantsPlayback ? 'Listening live.' : 'Ready.';
+    }
+
+    function connectStateSocket() {
+      if (!channelId || !window.WebSocket || stateSocket) return;
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const socket = new WebSocket(protocol + '//' + window.location.host + '/channels/' + encodeURIComponent(channelId) + '/ws');
+      stateSocket = socket;
+      socket.addEventListener('message', (event) => {
+        try {
+          const nextSnapshot = JSON.parse(event.data);
+          if (!nextSnapshot.error) {
+            snapshot = nextSnapshot;
+            render();
+          }
+        } catch (_error) {}
+      });
+      socket.addEventListener('close', () => {
+        if (stateSocket === socket) stateSocket = null;
+        setTimeout(connectStateSocket, 3000);
+      });
+    }
+
+    elements.playButton.addEventListener('click', playStream);
+    elements.stopButton.addEventListener('click', stopStream);
+    elements.channelSelect.addEventListener('change', (event) => {
+      changeChannel(event.target.value).catch((error) => {
+        elements.status.textContent = error.message || 'Failed to switch channel';
+      });
+    });
+    elements.listenPlayer.addEventListener('waiting', handleStreamWaiting);
+    elements.listenPlayer.addEventListener('stalled', handleStreamWaiting);
+    elements.listenPlayer.addEventListener('playing', handleStreamPlaying);
+    elements.listenPlayer.addEventListener('ended', handleStreamEnded);
+    elements.listenPlayer.addEventListener('error', handleStreamError);
+    refreshState().catch((error) => {
+      elements.title.textContent = 'Unavailable';
+      elements.artist.textContent = 'Check server and media library';
+      elements.status.textContent = error.message || 'Failed to load state';
+    });
+    setInterval(() => {
+      if (!stateSocket || stateSocket.readyState !== WebSocket.OPEN) {
+        refreshState().catch(() => {});
+      }
+    }, 5000);
+    setInterval(renderProgress, 250);
+  </script>
+</body>
+</html>

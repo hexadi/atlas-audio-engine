@@ -8,7 +8,8 @@ This first implementation focuses on a thin vertical slice:
 - canonical track/channel/playhead models
 - a deterministic scheduler with queue priority at track boundaries
 - an HTTP API for health, channels, now-playing, and queue control
-- a built-in homepage for now playing, progress, next song, skip control, queue visibility, queue adds/removes/reordering, and persisted playlist edits
+- a public listener homepage for now playing, progress, next song, and browser playback
+- an authenticated operator dashboard for skip control, queue visibility, queue adds/removes/reordering, persisted playlist edits, and broadcast tools
 
 ## Current MVP
 
@@ -20,8 +21,7 @@ Phase 1 intentionally does not include:
 
 - Jellyfin or Spotify integrations
 - RTMP output
-- overlay rendering
-- operator dashboard UI
+- external operator identity providers
 
 ## Project Layout
 
@@ -50,26 +50,35 @@ Set these environment variables as needed:
 - `ATLAS_CHANNEL_NAME` default `Local Library`
 - `ATLAS_FFMPEG_PATH` default `ffmpeg`
 - `ATLAS_VIDEO_FONT_PATH` optional `.ttf` or `.otf` file for `stream.ts` text rendering
+- `ATLAS_DASHBOARD_USERNAME` default `admin`
+- `ATLAS_DASHBOARD_PASSWORD` default `atlas`
 
 `ffprobe` must be available on the system path because the local source adapter uses it to read duration and tags.
 If a repo-local `.env` file exists, the app loads it automatically before applying defaults. Existing shell environment variables still take precedence.
 
 ## API
 
-- `GET /` homepage with now playing, audio player, progress bar, next song, skip control, queue visibility, queue adds, and playlist editing
+- `GET /` public homepage with now playing, audio player, progress bar, and next song
+- `GET /dashboard` authenticated operator dashboard with channel create/switch, queue, playlist, skip, library, and broadcast controls
 - `GET /visual` browser-source visual output with cover art, title, artist, next track, and progress
 - `GET /artwork/:trackId` cover image for local tracks that have `cover.jpg` beside the audio file
 - `GET /health`
 - `GET /channels`
+- `POST /channels`
+- `PATCH /channels/:id`
+- `DELETE /channels/:id`
 - `GET /channels/:id/library`
 - `GET /channels/:id/playlist`
 - `PUT /channels/:id/playlist`
+- `POST /channels/:id/playlist/shuffle`
 - `GET /channels/:id/tracks`
 - `GET /channels/:id/tracks/:trackId/audio`
 - `GET /channels/:id/stream.m3u8`
 - `GET /channels/:id/stream.mp3`
+- `GET /channels/:id/stream.pcm`
 - `GET /channels/:id/stream.ts`
 - `GET /channels/:id/broadcast.ts`
+- `GET /channels/:id/broadcast/status`
 - `GET /channels/:id/state`
 - `GET /channels/:id/ws`
 - `GET /channels/:id/now-playing`
@@ -80,19 +89,34 @@ If a repo-local `.env` file exists, the app loads it automatically before applyi
 - `POST /channels/:id/skip`
 
 `GET /channels/:id/queue` returns enriched queue entries with track metadata and queue position, not just raw track ids.
+`POST /channels` creates a new local-library-backed channel. If `track_ids` is omitted, the channel starts with an empty playlist so operators can build it from the dashboard library.
+`PATCH /channels/:id` updates channel metadata such as `name` or `enabled`; disabled channels remain visible in the dashboard but cannot play.
+`DELETE /channels/:id` deletes a channel plus its playlist and queue. The API refuses to delete the last remaining channel.
+`POST /channels/:id/playlist/shuffle` shuffles the selected channel playlist, resets the playhead to the first shuffled track, and persists the new order.
 `GET /channels/:id/state` returns a single operator snapshot with `now_playing`, `queue`, and `next_track`.
 `GET /channels/:id/ws` upgrades to a WebSocket and streams the same state snapshot for live now-playing updates.
 `GET /channels/:id/tracks/:trackId/audio` serves local audio for tracks attached to that channel playlist, current playhead, or queue.
 `GET /channels/:id/stream.m3u8` returns an initial HLS proof-of-concept manifest for the current local track.
 `GET /channels/:id/stream.mp3` uses FFmpeg to transcode a continuous browser-friendly MP3 station stream, advancing through tracks as the scheduler moves the playhead. The response is flushed in small chunks and paced in realtime so browsers can listen continuously instead of downloading whole songs at once.
+`GET /channels/:id/stream.pcm` exposes the same continuous station audio as raw 48kHz stereo PCM for internal broadcast composition.
 `GET /channels/:id/stream.ts` uses FFmpeg to compose the current audio with a live visual layer based on the same now-playing data as `/visual`: cover art, title, artist, and next track. It returns an MPEG-TS stream suitable for players such as VLC, ffplay, or OBS media sources.
-`GET /channels/:id/broadcast.ts` keeps one FFmpeg video encoder alive while Go continuously renders visual frames with current artwork and progress. FFmpeg overlays reloaded title, artist, next track, and clock text while consuming the channel's continuous MP3 stream. Use this for smoother broadcast-style video output without per-track video encoder restarts.
+`GET /channels/:id/broadcast.ts` keeps one FFmpeg video encoder alive while Go continuously renders visual frames with current artwork and progress. FFmpeg overlays reloaded title, artist, next track, and clock text while consuming the channel's continuous PCM stream. Use this for smoother broadcast-style video output without per-track video encoder restarts.
+`GET /channels/:id/broadcast/status` returns the recommended broadcast URL, encoder mode, video shape, audio feed format, and current broadcast metadata.
 
 Example queue request:
 
 ```json
 {
   "track_id": "your-track-id"
+}
+```
+
+Example channel create request:
+
+```json
+{
+  "name": "Second Channel",
+  "track_ids": ["track-id-1", "track-id-2"]
 }
 ```
 

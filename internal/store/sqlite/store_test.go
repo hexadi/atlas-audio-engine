@@ -26,6 +26,7 @@ func TestChannelStatePersistsAcrossSQLiteReopen(t *testing.T) {
 		Channel: domain.Channel{
 			ID:             "channel-1",
 			Name:           "SQLite Channel",
+			Enabled:        true,
 			CreatedAt:      now.Add(-time.Hour),
 			StartedAt:      now,
 			CurrentTrackID: "track-2",
@@ -56,6 +57,9 @@ func TestChannelStatePersistsAcrossSQLiteReopen(t *testing.T) {
 	if got.Channel.CurrentTrackID != "track-2" || got.Channel.PlaylistCursor != 1 {
 		t.Fatalf("expected current track/cursor to persist, got %#v", got.Channel)
 	}
+	if !got.Channel.Enabled {
+		t.Fatalf("expected channel enabled flag to persist")
+	}
 	if len(got.PlaylistTrackIDs) != 3 || got.PlaylistTrackIDs[0] != "track-1" || got.PlaylistTrackIDs[2] != "track-3" {
 		t.Fatalf("expected playlist order to persist, got %#v", got.PlaylistTrackIDs)
 	}
@@ -81,6 +85,7 @@ func TestQueueItemsReadBackInEnqueueOrder(t *testing.T) {
 		Channel: domain.Channel{
 			ID:             "channel-1",
 			Name:           "SQLite Channel",
+			Enabled:        true,
 			CreatedAt:      now.Add(-time.Hour),
 			StartedAt:      now,
 			CurrentTrackID: "track-1",
@@ -108,5 +113,44 @@ func TestQueueItemsReadBackInEnqueueOrder(t *testing.T) {
 	}
 	if got.Queue[0].TrackID != "track-3" || got.Queue[1].TrackID != "track-2" {
 		t.Fatalf("expected queue ordered by enqueue time [track-3, track-2], got %#v", got.Queue)
+	}
+}
+
+func TestDeleteChannelRemovesState(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "atlas-delete.db")
+	now := time.Date(2026, 4, 20, 11, 0, 0, 0, time.UTC)
+
+	repository, err := NewStore(dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite store: %v", err)
+	}
+	defer repository.Close()
+
+	state := store.ChannelState{
+		Channel: domain.Channel{
+			ID:             "channel-1",
+			Name:           "Delete Me",
+			Enabled:        true,
+			CreatedAt:      now.Add(-time.Hour),
+			StartedAt:      now,
+			CurrentTrackID: "track-1",
+			PlaylistCursor: 0,
+		},
+		PlaylistTrackIDs: []string{"track-1"},
+		Queue: []domain.QueueItem{
+			{ID: "queue-1", ChannelID: "channel-1", TrackID: "track-2", EnqueuedAt: now},
+		},
+	}
+	if err := repository.UpsertChannelState(ctx, state); err != nil {
+		t.Fatalf("upsert state: %v", err)
+	}
+	if err := repository.DeleteChannel(ctx, "channel-1"); err != nil {
+		t.Fatalf("delete channel: %v", err)
+	}
+	if _, err := repository.GetChannelState(ctx, "channel-1"); err == nil {
+		t.Fatalf("expected deleted channel to be unavailable")
 	}
 }

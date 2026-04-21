@@ -66,6 +66,7 @@ func SeedLocalChannel(
 		Channel: domain.Channel{
 			ID:             channelID,
 			Name:           channelName,
+			Enabled:        true,
 			CreatedAt:      startAt.UTC(),
 			StartedAt:      startAt.UTC(),
 			CurrentTrackID: playlistTrackIDs[0],

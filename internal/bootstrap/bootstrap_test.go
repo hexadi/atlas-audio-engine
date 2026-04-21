@@ -87,6 +87,7 @@ func TestSeedLocalChannelReconcilesStaleExistingPlaylist(t *testing.T) {
 		Channel: domain.Channel{
 			ID:             "local-library",
 			Name:           "Local Library",
+			Enabled:        true,
 			CreatedAt:      startedAt.Add(-time.Hour),
 			StartedAt:      startedAt.Add(-time.Hour),
 			CurrentTrackID: "stale-track",

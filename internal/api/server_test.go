@@ -62,6 +62,14 @@ func (f *fakeAudioStreamer) StreamMP3(_ context.Context, inputPath string, start
 	return err
 }
 
+func (f *fakeAudioStreamer) StreamPCM(_ context.Context, inputPath string, startSeconds float64, output io.Writer) error {
+	f.inputPath = inputPath
+	f.startSeconds = startSeconds
+	f.calls++
+	_, err := io.WriteString(output, f.output)
+	return err
+}
+
 func (f *fakeAudioStreamer) StreamMPEGTS(_ context.Context, inputPath string, startSeconds float64, metadata media.VideoMetadata, output io.Writer) error {
 	f.videoInputPath = inputPath
 	f.videoStartSeconds = startSeconds
@@ -125,6 +133,7 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 		Channel: domain.Channel{
 			ID:             "channel-1",
 			Name:           "Test Channel",
+			Enabled:        true,
 			CreatedAt:      now.Add(-time.Hour),
 			StartedAt:      now,
 			CurrentTrackID: "track-1",
@@ -159,20 +168,14 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("Now Playing")) {
 		t.Fatalf("expected home page HTML to include now playing heading")
 	}
-	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("Skip Track")) {
-		t.Fatalf("expected home page HTML to include skip control")
-	}
-	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("Add to Queue")) && !bytes.Contains(homeRecorder.Body.Bytes(), []byte("Library")) {
-		t.Fatalf("expected home page HTML to include library queue controls")
-	}
-	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("Playlist Editor")) {
-		t.Fatalf("expected home page HTML to include playlist editor")
-	}
 	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("listen-player")) {
 		t.Fatalf("expected home page HTML to include audio player")
 	}
-	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("Play Stream")) {
-		t.Fatalf("expected home page HTML to include play stream button")
+	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("Next Song")) {
+		t.Fatalf("expected home page HTML to include next song")
+	}
+	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("channel-select")) {
+		t.Fatalf("expected home page HTML to include channel selector")
 	}
 	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("stopStream")) {
 		t.Fatalf("expected home page HTML to include stop stream behavior")
@@ -185,6 +188,77 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	}
 	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("WebSocket")) {
 		t.Fatalf("expected home page HTML to include websocket live updates")
+	}
+	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("mediaSession")) {
+		t.Fatalf("expected home page HTML to support browser media controls")
+	}
+	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte(" | LIVE")) {
+		t.Fatalf("expected home page media session metadata to label playback as live")
+	}
+	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("scheduleStreamReconnect")) {
+		t.Fatalf("expected home page HTML to recover interrupted listener streams")
+	}
+	if bytes.Contains(homeRecorder.Body.Bytes(), []byte("Playlist Editor")) {
+		t.Fatalf("expected home page HTML not to include dashboard playlist editor")
+	}
+	if bytes.Contains(homeRecorder.Body.Bytes(), []byte("Skip Track")) {
+		t.Fatalf("expected home page HTML not to include dashboard skip control")
+	}
+
+	dashboardUnauthorizedRecorder := httptest.NewRecorder()
+	dashboardUnauthorizedRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	server.ServeHTTP(dashboardUnauthorizedRecorder, dashboardUnauthorizedRequest)
+
+	if dashboardUnauthorizedRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 from dashboard without auth, got %d", dashboardUnauthorizedRecorder.Code)
+	}
+
+	dashboardRecorder := httptest.NewRecorder()
+	dashboardRequest := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	dashboardRequest.SetBasicAuth(DefaultDashboardUsername, DefaultDashboardPassword)
+	server.ServeHTTP(dashboardRecorder, dashboardRequest)
+
+	if dashboardRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from dashboard with auth, got %d", dashboardRecorder.Code)
+	}
+	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("Skip Track")) {
+		t.Fatalf("expected dashboard HTML to include skip control")
+	}
+	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("Add to Queue")) && !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("Library")) {
+		t.Fatalf("expected dashboard HTML to include library queue controls")
+	}
+	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("Playlist Editor")) {
+		t.Fatalf("expected dashboard HTML to include playlist editor")
+	}
+	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("Shuffle")) {
+		t.Fatalf("expected dashboard HTML to include playlist shuffle control")
+	}
+	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("channel-select")) {
+		t.Fatalf("expected dashboard HTML to include channel selector")
+	}
+	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("Create Channel")) {
+		t.Fatalf("expected dashboard HTML to include channel creation control")
+	}
+	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("Disable Channel")) {
+		t.Fatalf("expected dashboard HTML to include channel disable control")
+	}
+	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("Delete Channel")) {
+		t.Fatalf("expected dashboard HTML to include channel delete control")
+	}
+	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("Broadcast Output")) {
+		t.Fatalf("expected dashboard HTML to include broadcast controls")
+	}
+	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("broadcast/status")) {
+		t.Fatalf("expected dashboard HTML to load broadcast status")
+	}
+	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("broadcast.ts")) {
+		t.Fatalf("expected dashboard HTML to link broadcast stream")
+	}
+	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("visual-preview-frame")) {
+		t.Fatalf("expected dashboard HTML to include embedded visual preview")
+	}
+	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("Try Video Stream")) {
+		t.Fatalf("expected dashboard HTML to include broadcast video preview control")
 	}
 
 	visualRecorder := httptest.NewRecorder()
@@ -314,7 +388,7 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	if broadcastRecorder.Header().Get("X-Atlas-Broadcast-Mode") != "persistent-visual-encoder" {
 		t.Fatalf("expected persistent encoder header, got %q", broadcastRecorder.Header().Get("X-Atlas-Broadcast-Mode"))
 	}
-	if streamer.persistentAudioURL != "http://example.com/channels/channel-1/stream.mp3" {
+	if streamer.persistentAudioURL != "http://example.com/channels/channel-1/stream.pcm" {
 		t.Fatalf("expected broadcast to consume station audio URL, got %q", streamer.persistentAudioURL)
 	}
 	if streamer.persistentMetadata.Title != "Track One" || streamer.persistentMetadata.NextTitle != "Track Two" {
@@ -322,6 +396,39 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	}
 	if streamer.persistentMetadata.ArtworkPath != coverPath {
 		t.Fatalf("expected broadcast metadata to include artwork path, got %#v", streamer.persistentMetadata)
+	}
+
+	statusRecorder := httptest.NewRecorder()
+	statusRequest := httptest.NewRequest(http.MethodGet, "/channels/channel-1/broadcast/status", nil)
+	server.ServeHTTP(statusRecorder, statusRequest)
+
+	if statusRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from broadcast status, got %d", statusRecorder.Code)
+	}
+	var status broadcastStatusResponse
+	if err := json.Unmarshal(statusRecorder.Body.Bytes(), &status); err != nil {
+		t.Fatalf("unmarshal broadcast status: %v", err)
+	}
+	if status.Mode != "persistent-visual-encoder" {
+		t.Fatalf("expected persistent visual encoder mode, got %q", status.Mode)
+	}
+	if status.Video.Width != 1280 || status.Video.Height != 720 || status.Video.FPS != 24 {
+		t.Fatalf("expected broadcast video shape, got %#v", status.Video)
+	}
+	if status.Audio.Format != "s16le" || status.Audio.SampleRate != 48000 || status.Audio.Channels != 2 {
+		t.Fatalf("expected broadcast PCM audio status, got %#v", status.Audio)
+	}
+	if status.RecommendedURL != "http://example.com/channels/channel-1/broadcast.ts" {
+		t.Fatalf("expected recommended broadcast url, got %q", status.RecommendedURL)
+	}
+	if status.URLs.PCM != "http://example.com/channels/channel-1/stream.pcm" {
+		t.Fatalf("expected PCM URL, got %q", status.URLs.PCM)
+	}
+	if status.NowPlaying.Title != "Track One" || status.NowPlaying.ArtworkPath != coverPath {
+		t.Fatalf("expected status now playing metadata, got %#v", status.NowPlaying)
+	}
+	if !status.HasStreamer {
+		t.Fatalf("expected status to report streamer configured")
 	}
 
 	recorder := httptest.NewRecorder()
@@ -376,6 +483,141 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	}
 	if len(libraryTracks) != 4 {
 		t.Fatalf("expected full library to include 4 tracks, got %d", len(libraryTracks))
+	}
+
+	createChannelBody, _ := json.Marshal(map[string]interface{}{
+		"name":      "Second Channel",
+		"track_ids": []string{"track-2", "track-1"},
+	})
+	createChannelRecorder := httptest.NewRecorder()
+	createChannelRequest := httptest.NewRequest(http.MethodPost, "/channels", bytes.NewReader(createChannelBody))
+	createChannelRequest.Header.Set("Content-Type", "application/json")
+	server.ServeHTTP(createChannelRecorder, createChannelRequest)
+
+	if createChannelRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected 201 from channel create, got %d", createChannelRecorder.Code)
+	}
+
+	var createdChannel domain.Channel
+	if err := json.Unmarshal(createChannelRecorder.Body.Bytes(), &createdChannel); err != nil {
+		t.Fatalf("unmarshal created channel: %v", err)
+	}
+	if createdChannel.ID != "second-channel" || createdChannel.Name != "Second Channel" || createdChannel.CurrentTrackID != "track-2" || !createdChannel.Enabled {
+		t.Fatalf("expected created second channel with track-2 current, got %#v", createdChannel)
+	}
+
+	secondChannelStateRecorder := httptest.NewRecorder()
+	secondChannelStateRequest := httptest.NewRequest(http.MethodGet, "/channels/second-channel/state", nil)
+	server.ServeHTTP(secondChannelStateRecorder, secondChannelStateRequest)
+
+	if secondChannelStateRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from second channel state, got %d", secondChannelStateRecorder.Code)
+	}
+	var secondChannelState domain.ChannelStateSnapshot
+	if err := json.Unmarshal(secondChannelStateRecorder.Body.Bytes(), &secondChannelState); err != nil {
+		t.Fatalf("unmarshal second channel state: %v", err)
+	}
+	if secondChannelState.ChannelID != "second-channel" || secondChannelState.NowPlaying.TrackID != "track-2" {
+		t.Fatalf("expected independent second channel state, got %#v", secondChannelState)
+	}
+	if secondChannelState.NextTrack == nil || secondChannelState.NextTrack.TrackID != "track-1" {
+		t.Fatalf("expected second channel next track track-1, got %#v", secondChannelState.NextTrack)
+	}
+
+	disableChannelBody, _ := json.Marshal(map[string]bool{"enabled": false})
+	disableChannelRecorder := httptest.NewRecorder()
+	disableChannelRequest := httptest.NewRequest(http.MethodPatch, "/channels/second-channel", bytes.NewReader(disableChannelBody))
+	disableChannelRequest.Header.Set("Content-Type", "application/json")
+	server.ServeHTTP(disableChannelRecorder, disableChannelRequest)
+
+	if disableChannelRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from channel disable, got %d", disableChannelRecorder.Code)
+	}
+	var disabledChannel domain.Channel
+	if err := json.Unmarshal(disableChannelRecorder.Body.Bytes(), &disabledChannel); err != nil {
+		t.Fatalf("unmarshal disabled channel: %v", err)
+	}
+	if disabledChannel.Enabled {
+		t.Fatalf("expected channel to be disabled, got %#v", disabledChannel)
+	}
+
+	disabledStateRecorder := httptest.NewRecorder()
+	disabledStateRequest := httptest.NewRequest(http.MethodGet, "/channels/second-channel/state", nil)
+	server.ServeHTTP(disabledStateRecorder, disabledStateRequest)
+
+	if disabledStateRecorder.Code == http.StatusOK {
+		t.Fatalf("expected disabled channel state not to be playable")
+	}
+
+	enableChannelBody, _ := json.Marshal(map[string]bool{"enabled": true})
+	enableChannelRecorder := httptest.NewRecorder()
+	enableChannelRequest := httptest.NewRequest(http.MethodPatch, "/channels/second-channel", bytes.NewReader(enableChannelBody))
+	enableChannelRequest.Header.Set("Content-Type", "application/json")
+	server.ServeHTTP(enableChannelRecorder, enableChannelRequest)
+
+	if enableChannelRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from channel enable, got %d", enableChannelRecorder.Code)
+	}
+
+	listChannelsRecorder := httptest.NewRecorder()
+	listChannelsRequest := httptest.NewRequest(http.MethodGet, "/channels", nil)
+	server.ServeHTTP(listChannelsRecorder, listChannelsRequest)
+
+	var channels []domain.Channel
+	if err := json.Unmarshal(listChannelsRecorder.Body.Bytes(), &channels); err != nil {
+		t.Fatalf("unmarshal channels after create: %v", err)
+	}
+	if len(channels) != 2 {
+		t.Fatalf("expected 2 channels after create, got %d", len(channels))
+	}
+
+	emptyChannelBody, _ := json.Marshal(map[string]string{"name": "Empty Channel"})
+	emptyChannelRecorder := httptest.NewRecorder()
+	emptyChannelRequest := httptest.NewRequest(http.MethodPost, "/channels", bytes.NewReader(emptyChannelBody))
+	emptyChannelRequest.Header.Set("Content-Type", "application/json")
+	server.ServeHTTP(emptyChannelRecorder, emptyChannelRequest)
+
+	if emptyChannelRecorder.Code != http.StatusCreated {
+		t.Fatalf("expected 201 from empty channel create, got %d", emptyChannelRecorder.Code)
+	}
+	var emptyChannel domain.Channel
+	if err := json.Unmarshal(emptyChannelRecorder.Body.Bytes(), &emptyChannel); err != nil {
+		t.Fatalf("unmarshal empty channel: %v", err)
+	}
+	if emptyChannel.ID != "empty-channel" || emptyChannel.CurrentTrackID != "" {
+		t.Fatalf("expected empty channel without current track, got %#v", emptyChannel)
+	}
+
+	emptyChannelPlaylistRecorder := httptest.NewRecorder()
+	emptyChannelPlaylistRequest := httptest.NewRequest(http.MethodGet, "/channels/empty-channel/playlist", nil)
+	server.ServeHTTP(emptyChannelPlaylistRecorder, emptyChannelPlaylistRequest)
+
+	if emptyChannelPlaylistRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from empty channel playlist, got %d", emptyChannelPlaylistRecorder.Code)
+	}
+	var emptyChannelPlaylist []domain.PlaylistEntry
+	if err := json.Unmarshal(emptyChannelPlaylistRecorder.Body.Bytes(), &emptyChannelPlaylist); err != nil {
+		t.Fatalf("unmarshal empty channel playlist: %v", err)
+	}
+	if len(emptyChannelPlaylist) != 0 {
+		t.Fatalf("expected empty channel playlist, got %#v", emptyChannelPlaylist)
+	}
+
+	deleteChannelRecorder := httptest.NewRecorder()
+	deleteChannelRequest := httptest.NewRequest(http.MethodDelete, "/channels/empty-channel", nil)
+	server.ServeHTTP(deleteChannelRecorder, deleteChannelRequest)
+
+	if deleteChannelRecorder.Code != http.StatusNoContent {
+		t.Fatalf("expected 204 from channel delete, got %d", deleteChannelRecorder.Code)
+	}
+
+	duplicateChannelRecorder := httptest.NewRecorder()
+	duplicateChannelRequest := httptest.NewRequest(http.MethodPost, "/channels", bytes.NewReader(createChannelBody))
+	duplicateChannelRequest.Header.Set("Content-Type", "application/json")
+	server.ServeHTTP(duplicateChannelRecorder, duplicateChannelRequest)
+
+	if duplicateChannelRecorder.Code != http.StatusConflict {
+		t.Fatalf("expected 409 from duplicate channel create, got %d", duplicateChannelRecorder.Code)
 	}
 
 	playlistRecorder := httptest.NewRecorder()
@@ -604,6 +846,34 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	if advancedPlayhead.TrackID != "track-3" {
 		t.Fatalf("expected remaining queued track after skipped reordered item, got %s", advancedPlayhead.TrackID)
 	}
+
+	shufflePlaylistRecorder := httptest.NewRecorder()
+	shufflePlaylistRequest := httptest.NewRequest(http.MethodPost, "/channels/channel-1/playlist/shuffle", nil)
+	server.ServeHTTP(shufflePlaylistRecorder, shufflePlaylistRequest)
+
+	if shufflePlaylistRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 from shuffle playlist, got %d", shufflePlaylistRecorder.Code)
+	}
+	var shuffledPlaylist []domain.PlaylistEntry
+	if err := json.Unmarshal(shufflePlaylistRecorder.Body.Bytes(), &shuffledPlaylist); err != nil {
+		t.Fatalf("unmarshal shuffled playlist: %v", err)
+	}
+	if len(shuffledPlaylist) != 3 {
+		t.Fatalf("expected shuffled playlist to keep 3 tracks, got %d", len(shuffledPlaylist))
+	}
+	shuffledIDs := []string{shuffledPlaylist[0].TrackID, shuffledPlaylist[1].TrackID, shuffledPlaylist[2].TrackID}
+	if strings.Join(shuffledIDs, ",") == "track-2,track-3,track-1" {
+		t.Fatalf("expected shuffle to avoid returning the same order when possible, got %#v", shuffledIDs)
+	}
+	shuffledSet := map[string]bool{}
+	for _, trackID := range shuffledIDs {
+		shuffledSet[trackID] = true
+	}
+	for _, trackID := range []string{"track-1", "track-2", "track-3"} {
+		if !shuffledSet[trackID] {
+			t.Fatalf("expected shuffled playlist to keep track %s, got %#v", trackID, shuffledIDs)
+		}
+	}
 }
 
 func TestVideoStreamContinuesAcrossSegmentsOnOneResponse(t *testing.T) {
@@ -619,6 +889,7 @@ func TestVideoStreamContinuesAcrossSegmentsOnOneResponse(t *testing.T) {
 		Channel: domain.Channel{
 			ID:             "channel-1",
 			Name:           "Test Channel",
+			Enabled:        true,
 			CreatedAt:      now.Add(-time.Hour),
 			StartedAt:      now,
 			CurrentTrackID: "track-1",
@@ -704,6 +975,7 @@ func TestStateWebSocketSendsSnapshot(t *testing.T) {
 		Channel: domain.Channel{
 			ID:             "channel-1",
 			Name:           "Test Channel",
+			Enabled:        true,
 			CreatedAt:      now.Add(-time.Hour),
 			StartedAt:      now,
 			CurrentTrackID: "track-1",

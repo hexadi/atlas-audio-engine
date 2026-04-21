@@ -40,6 +40,7 @@ type PlaylistEntry struct {
 type Channel struct {
 	ID             string    `json:"id"`
 	Name           string    `json:"name"`
+	Enabled        bool      `json:"enabled"`
 	CreatedAt      time.Time `json:"created_at"`
 	StartedAt      time.Time `json:"started_at"`
 	CurrentTrackID string    `json:"current_track_id,omitempty"`

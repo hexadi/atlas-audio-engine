@@ -35,7 +35,10 @@ func main() {
 	}
 
 	service := scheduler.NewService(store, trackSource)
-	server := api.NewServerWithStreamer(service, ffmpeg.NewStreamerWithFont(cfg.FFmpegPath, cfg.VideoFontPath))
+	server := api.NewServerWithOptions(service, ffmpeg.NewStreamerWithFont(cfg.FFmpegPath, cfg.VideoFontPath), api.ServerOptions{
+		DashboardUsername: cfg.DashboardUsername,
+		DashboardPassword: cfg.DashboardPassword,
+	})
 
 	httpServer := &http.Server{
 		Addr:              cfg.ListenAddress,

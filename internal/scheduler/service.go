@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math/rand/v2"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/homepc/atlas-audio-engine/internal/domain"
 	"github.com/homepc/atlas-audio-engine/internal/source"
@@ -19,6 +22,9 @@ type Service struct {
 	source source.Library
 	clock  Clock
 }
+
+var ErrChannelExists = errors.New("channel already exists")
+var ErrCannotDeleteLastChannel = errors.New("cannot delete the last channel")
 
 func NewService(repository store.Store, library source.Library) *Service {
 	return &Service{
@@ -38,6 +44,96 @@ func NewServiceWithClock(repository store.Store, library source.Library, clock C
 
 func (s *Service) ListChannels(ctx context.Context) ([]domain.Channel, error) {
 	return s.store.ListChannels(ctx)
+}
+
+func (s *Service) CreateChannel(ctx context.Context, id, name string, trackIDs []string) (domain.Channel, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return domain.Channel{}, errors.New("channel name is required")
+	}
+
+	id = normalizeChannelID(id)
+	if id == "" {
+		id = normalizeChannelID(name)
+	}
+	if id == "" {
+		return domain.Channel{}, errors.New("channel id is required")
+	}
+
+	channels, err := s.store.ListChannels(ctx)
+	if err != nil {
+		return domain.Channel{}, err
+	}
+	for _, channel := range channels {
+		if channel.ID == id {
+			return domain.Channel{}, ErrChannelExists
+		}
+	}
+
+	playlistTrackIDs, err := s.resolvePlaylistTrackIDs(ctx, trackIDs)
+	if err != nil {
+		return domain.Channel{}, err
+	}
+
+	now := s.clock().UTC()
+	channel := domain.Channel{
+		ID:        id,
+		Name:      name,
+		Enabled:   true,
+		CreatedAt: now,
+		StartedAt: now,
+	}
+	if len(playlistTrackIDs) > 0 {
+		channel.CurrentTrackID = playlistTrackIDs[0]
+	}
+
+	if err := s.store.UpsertChannelState(ctx, store.ChannelState{
+		Channel:          channel,
+		PlaylistTrackIDs: playlistTrackIDs,
+	}); err != nil {
+		return domain.Channel{}, err
+	}
+	log.Printf("event=channel.create channel_id=%s track_count=%d", channel.ID, len(playlistTrackIDs))
+	return channel, nil
+}
+
+func (s *Service) UpdateChannel(ctx context.Context, channelID string, name *string, enabled *bool) (domain.Channel, error) {
+	state, err := s.store.GetChannelState(ctx, channelID)
+	if err != nil {
+		return domain.Channel{}, err
+	}
+
+	if name != nil {
+		trimmed := strings.TrimSpace(*name)
+		if trimmed == "" {
+			return domain.Channel{}, errors.New("channel name is required")
+		}
+		state.Channel.Name = trimmed
+	}
+	if enabled != nil {
+		state.Channel.Enabled = *enabled
+	}
+
+	if err := s.store.UpsertChannelState(ctx, state); err != nil {
+		return domain.Channel{}, err
+	}
+	log.Printf("event=channel.update channel_id=%s enabled=%t", channelID, state.Channel.Enabled)
+	return state.Channel, nil
+}
+
+func (s *Service) DeleteChannel(ctx context.Context, channelID string) error {
+	channels, err := s.store.ListChannels(ctx)
+	if err != nil {
+		return err
+	}
+	if len(channels) <= 1 {
+		return ErrCannotDeleteLastChannel
+	}
+	if err := s.store.DeleteChannel(ctx, channelID); err != nil {
+		return err
+	}
+	log.Printf("event=channel.delete channel_id=%s", channelID)
+	return nil
 }
 
 func (s *Service) Queue(ctx context.Context, channelID string) ([]domain.QueueEntry, error) {
@@ -159,7 +255,106 @@ func (s *Service) ReplacePlaylist(ctx context.Context, channelID string, trackID
 	return s.Playlist(ctx, channelID)
 }
 
+func (s *Service) ShufflePlaylist(ctx context.Context, channelID string) ([]domain.PlaylistEntry, error) {
+	state, err := s.store.GetChannelState(ctx, channelID)
+	if err != nil {
+		return nil, err
+	}
+	if len(state.PlaylistTrackIDs) == 0 {
+		return nil, errors.New("playlist must contain at least one track")
+	}
+
+	shuffled := append([]string(nil), state.PlaylistTrackIDs...)
+	if len(shuffled) > 1 {
+		original := append([]string(nil), shuffled...)
+		for attempt := 0; attempt < 8; attempt++ {
+			rand.Shuffle(len(shuffled), func(i, j int) {
+				shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+			})
+			if !sameTrackOrder(original, shuffled) {
+				break
+			}
+		}
+	}
+
+	state.PlaylistTrackIDs = shuffled
+	state.Channel.PlaylistCursor = 0
+	state.Channel.CurrentTrackID = shuffled[0]
+	state.Channel.StartedAt = s.clock().UTC()
+
+	if err := s.store.UpsertChannelState(ctx, state); err != nil {
+		return nil, err
+	}
+	log.Printf("event=playlist.shuffle channel_id=%s track_count=%d current_track_id=%s", channelID, len(shuffled), state.Channel.CurrentTrackID)
+	return s.Playlist(ctx, channelID)
+}
+
+func sameTrackOrder(left []string, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Service) resolvePlaylistTrackIDs(ctx context.Context, trackIDs []string) ([]string, error) {
+	if len(trackIDs) == 0 {
+		return nil, nil
+	}
+
+	seen := make(map[string]struct{}, len(trackIDs))
+	resolved := make([]string, 0, len(trackIDs))
+	for _, trackID := range trackIDs {
+		trackID = strings.TrimSpace(trackID)
+		if trackID == "" {
+			return nil, errors.New("playlist track id cannot be empty")
+		}
+		if _, exists := seen[trackID]; exists {
+			return nil, fmt.Errorf("playlist contains duplicate track %q", trackID)
+		}
+		track, err := s.source.GetTrack(ctx, trackID)
+		if err != nil {
+			return nil, err
+		}
+		if track.ID == "" {
+			return nil, errors.New("track not found")
+		}
+		seen[trackID] = struct{}{}
+		resolved = append(resolved, trackID)
+	}
+	return resolved, nil
+}
+
+func normalizeChannelID(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	var builder strings.Builder
+	lastDash := false
+	for _, r := range value {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			builder.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash && builder.Len() > 0 {
+			builder.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(builder.String(), "-")
+}
+
 func (s *Service) Enqueue(ctx context.Context, channelID, trackID string) (domain.QueueItem, error) {
+	state, err := s.store.GetChannelState(ctx, channelID)
+	if err != nil {
+		return domain.QueueItem{}, err
+	}
+	if !state.Channel.Enabled {
+		return domain.QueueItem{}, errors.New("channel is disabled")
+	}
 	if _, err := s.source.GetTrack(ctx, trackID); err != nil {
 		return domain.QueueItem{}, err
 	}
@@ -269,6 +464,9 @@ func (s *Service) Skip(ctx context.Context, channelID string) (domain.PlayheadSt
 	if err != nil {
 		return domain.PlayheadState{}, err
 	}
+	if !state.Channel.Enabled {
+		return domain.PlayheadState{}, errors.New("channel is disabled")
+	}
 	if len(state.PlaylistTrackIDs) == 0 {
 		return domain.PlayheadState{}, errors.New("channel playlist is empty")
 	}
@@ -356,6 +554,9 @@ func (s *Service) Current(ctx context.Context, channelID string, at time.Time) (
 	if err != nil {
 		return domain.PlayheadState{}, err
 	}
+	if !state.Channel.Enabled {
+		return domain.PlayheadState{}, errors.New("channel is disabled")
+	}
 
 	if len(state.PlaylistTrackIDs) == 0 {
 		return domain.PlayheadState{}, errors.New("channel playlist is empty")
@@ -430,6 +631,9 @@ func (s *Service) Next(ctx context.Context, channelID, afterTrackID string) (*do
 	state, err := s.store.GetChannelState(ctx, channelID)
 	if err != nil {
 		return nil, err
+	}
+	if !state.Channel.Enabled {
+		return nil, errors.New("channel is disabled")
 	}
 
 	if len(state.Queue) > 0 {

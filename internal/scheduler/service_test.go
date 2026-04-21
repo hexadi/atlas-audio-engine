@@ -177,6 +177,7 @@ func newTestService(t *testing.T, now time.Time) *Service {
 		Channel: domain.Channel{
 			ID:             "channel-1",
 			Name:           "Test Channel",
+			Enabled:        true,
 			CreatedAt:      now.Add(-time.Hour),
 			StartedAt:      time.Date(2026, 4, 19, 12, 0, 0, 0, time.UTC),
 			CurrentTrackID: "track-1",

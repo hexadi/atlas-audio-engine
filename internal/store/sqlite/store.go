@@ -37,7 +37,7 @@ func (s *Store) Close() error {
 
 func (s *Store) ListChannels(ctx context.Context) ([]domain.Channel, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, created_at, started_at, current_track_id, playlist_cursor
+		SELECT id, name, enabled, created_at, started_at, current_track_id, playlist_cursor
 		FROM channels
 		ORDER BY name ASC
 	`)
@@ -52,6 +52,7 @@ func (s *Store) ListChannels(ctx context.Context) ([]domain.Channel, error) {
 		if err := rows.Scan(
 			&channel.ID,
 			&channel.Name,
+			&channel.Enabled,
 			&channel.CreatedAt,
 			&channel.StartedAt,
 			&channel.CurrentTrackID,
@@ -67,12 +68,13 @@ func (s *Store) ListChannels(ctx context.Context) ([]domain.Channel, error) {
 func (s *Store) GetChannelState(ctx context.Context, channelID string) (store.ChannelState, error) {
 	var state store.ChannelState
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, name, created_at, started_at, current_track_id, playlist_cursor
+		SELECT id, name, enabled, created_at, started_at, current_track_id, playlist_cursor
 		FROM channels
 		WHERE id = ?
 	`, channelID).Scan(
 		&state.Channel.ID,
 		&state.Channel.Name,
+		&state.Channel.Enabled,
 		&state.Channel.CreatedAt,
 		&state.Channel.StartedAt,
 		&state.Channel.CurrentTrackID,
@@ -140,10 +142,11 @@ func (s *Store) UpsertChannelState(ctx context.Context, state store.ChannelState
 	}()
 
 	if _, err = tx.ExecContext(ctx, `
-		INSERT INTO channels (id, name, created_at, started_at, current_track_id, playlist_cursor)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO channels (id, name, enabled, created_at, started_at, current_track_id, playlist_cursor)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name,
+			enabled = excluded.enabled,
 			created_at = excluded.created_at,
 			started_at = excluded.started_at,
 			current_track_id = excluded.current_track_id,
@@ -151,6 +154,7 @@ func (s *Store) UpsertChannelState(ctx context.Context, state store.ChannelState
 	`,
 		state.Channel.ID,
 		state.Channel.Name,
+		state.Channel.Enabled,
 		state.Channel.CreatedAt.UTC(),
 		state.Channel.StartedAt.UTC(),
 		state.Channel.CurrentTrackID,
@@ -183,6 +187,38 @@ func (s *Store) UpsertChannelState(ctx context.Context, state store.ChannelState
 		}
 	}
 
+	return tx.Commit()
+}
+
+func (s *Store) DeleteChannel(ctx context.Context, channelID string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	if _, err = tx.ExecContext(ctx, `DELETE FROM playlist_entries WHERE channel_id = ?`, channelID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM queue_items WHERE channel_id = ?`, channelID); err != nil {
+		return err
+	}
+
+	result, err := tx.ExecContext(ctx, `DELETE FROM channels WHERE id = ?`, channelID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return errors.New("channel not found")
+	}
 	return tx.Commit()
 }
 
@@ -223,10 +259,11 @@ func (s *Store) RemoveQueueItem(ctx context.Context, channelID, queueItemID stri
 }
 
 func (s *Store) ensureSchema() error {
-	_, err := s.db.Exec(`
+	if _, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS channels (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
+			enabled BOOLEAN NOT NULL DEFAULT 1,
 			created_at DATETIME NOT NULL,
 			started_at DATETIME NOT NULL,
 			current_track_id TEXT NOT NULL,
@@ -246,6 +283,37 @@ func (s *Store) ensureSchema() error {
 			track_id TEXT NOT NULL,
 			enqueued_at DATETIME NOT NULL
 		);
-	`)
+	`); err != nil {
+		return err
+	}
+	return s.ensureColumn("channels", "enabled", "BOOLEAN NOT NULL DEFAULT 1")
+}
+
+func (s *Store) ensureColumn(tableName, columnName, definition string) error {
+	rows, err := s.db.Query(fmt.Sprintf(`PRAGMA table_info(%s)`, tableName))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue sql.NullString
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return err
+		}
+		if name == columnName {
+			return rows.Err()
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, tableName, columnName, definition))
 	return err
 }

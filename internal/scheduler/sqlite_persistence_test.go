@@ -34,6 +34,7 @@ func TestReplacePlaylistPersistsAcrossSQLiteReopen(t *testing.T) {
 		Channel: domain.Channel{
 			ID:             "channel-1",
 			Name:           "SQLite Channel",
+			Enabled:        true,
 			CreatedAt:      now.Add(-time.Hour),
 			StartedAt:      now.Add(-time.Minute),
 			CurrentTrackID: "track-1",

@@ -8,6 +8,7 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,9 +26,10 @@ type Streamer struct {
 
 const videoFPS = 24
 const (
-	frameWidth  = 1280
-	frameHeight = 720
-	artSize     = 440
+	frameWidth   = 1280
+	frameHeight  = 720
+	artSize      = 440
+	textFileSize = 2048
 )
 
 func NewStreamer(binary string) *Streamer {
@@ -58,6 +60,56 @@ func (s *Streamer) StreamMP3(ctx context.Context, inputPath string, startSeconds
 		"pipe:1",
 	)
 
+	cmd := exec.CommandContext(ctx, s.binary, args...)
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+
+	stderrDone := readAllAsync(stderr)
+	copyErr := copyChunks(output, stdout)
+	waitErr := cmd.Wait()
+	stderrOutput := <-stderrDone
+	if copyErr != nil {
+		return copyErr
+	}
+	if waitErr != nil {
+		return fmt.Errorf("%w: %s", waitErr, strings.TrimSpace(stderrOutput))
+	}
+	return nil
+}
+
+func (s *Streamer) StreamPCM(ctx context.Context, inputPath string, startSeconds float64, output io.Writer) error {
+	args := []string{
+		"-hide_banner",
+		"-loglevel", "error",
+	}
+	if startSeconds > 0 {
+		args = append(args, "-ss", strconv.FormatFloat(startSeconds, 'f', 3, 64))
+	}
+	args = append(args,
+		"-re",
+		"-i", inputPath,
+		"-vn",
+		"-acodec", "pcm_s16le",
+		"-ar", "48000",
+		"-ac", "2",
+		"-flush_packets", "1",
+		"-f", "s16le",
+		"pipe:1",
+	)
+
+	return s.runFFmpegToWriter(ctx, args, output)
+}
+
+func (s *Streamer) runFFmpegToWriter(ctx context.Context, args []string, output io.Writer) error {
 	cmd := exec.CommandContext(ctx, s.binary, args...)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
@@ -207,6 +259,9 @@ func (s *Streamer) StreamPersistentMPEGTS(ctx context.Context, audioURL string, 
 		"-reconnect", "1",
 		"-reconnect_streamed", "1",
 		"-reconnect_delay_max", "2",
+		"-f", "s16le",
+		"-ar", "48000",
+		"-ac", "2",
 		"-i", audioURL,
 		"-re",
 		"-f", "lavfi",
@@ -262,6 +317,7 @@ func (s *Streamer) StreamPersistentMPEGTS(ctx context.Context, audioURL string, 
 }
 
 func (s *Streamer) StreamPersistentVisualMPEGTS(ctx context.Context, audioURL string, metadataProvider media.VideoMetadataProvider, output io.Writer) error {
+	startedAt := time.Now()
 	tempDir, err := os.MkdirTemp("", "atlas-broadcast-visual-*")
 	if err != nil {
 		return err
@@ -297,6 +353,9 @@ func (s *Streamer) StreamPersistentVisualMPEGTS(ctx context.Context, audioURL st
 		"-reconnect", "1",
 		"-reconnect_streamed", "1",
 		"-reconnect_delay_max", "2",
+		"-f", "s16le",
+		"-ar", "48000",
+		"-ac", "2",
 		"-i", audioURL,
 	}
 
@@ -338,6 +397,7 @@ func (s *Streamer) StreamPersistentVisualMPEGTS(ctx context.Context, audioURL st
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	log.Printf("event=ffmpeg.broadcast_visual.start pid=%d audio_url=%q fps=%d width=%d height=%d", cmd.Process.Pid, audioURL, videoFPS, frameWidth, frameHeight)
 
 	frameErr := make(chan error, 1)
 	go func() {
@@ -349,6 +409,7 @@ func (s *Streamer) StreamPersistentVisualMPEGTS(ctx context.Context, audioURL st
 	waitErr := cmd.Wait()
 	stderrOutput := <-stderrDone
 	cancelMetadata()
+	durationMs := time.Since(startedAt).Milliseconds()
 
 	select {
 	case err := <-frameErr:
@@ -359,11 +420,15 @@ func (s *Streamer) StreamPersistentVisualMPEGTS(ctx context.Context, audioURL st
 	}
 
 	if copyErr != nil {
+		log.Printf("event=ffmpeg.broadcast_visual.stop duration_ms=%d copy_error=%q", durationMs, copyErr)
 		return copyErr
 	}
 	if waitErr != nil {
-		return fmt.Errorf("%w: %s", waitErr, strings.TrimSpace(stderrOutput))
+		trimmedStderr := strings.TrimSpace(stderrOutput)
+		log.Printf("event=ffmpeg.broadcast_visual.stop duration_ms=%d wait_error=%q stderr=%q", durationMs, waitErr, trimmedStderr)
+		return fmt.Errorf("%w: %s", waitErr, trimmedStderr)
 	}
+	log.Printf("event=ffmpeg.broadcast_visual.stop duration_ms=%d status=ok", durationMs)
 	return nil
 }
 
@@ -412,13 +477,22 @@ type persistentMetadataFiles struct {
 func refreshPersistentMetadata(ctx context.Context, provider media.VideoMetadataProvider, files persistentMetadataFiles) {
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
+	lastError := ""
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			_ = writePersistentMetadata(ctx, provider, files)
+			if err := writePersistentMetadata(ctx, provider, files); err != nil {
+				message := err.Error()
+				if message != lastError {
+					log.Printf("event=ffmpeg.broadcast_metadata.error error=%q", err)
+					lastError = message
+				}
+				continue
+			}
+			lastError = ""
 		}
 	}
 }
@@ -439,15 +513,58 @@ func writePersistentMetadataValue(metadata media.VideoMetadata, files persistent
 		files.clock:  formatClock(metadata.ElapsedMs, metadata.DurationMs),
 	}
 	for path, value := range values {
-		if err := os.WriteFile(path, []byte(value), 0o644); err != nil {
+		if err := writeStableTextFile(path, value); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+func writeStableTextFile(path, value string) error {
+	if strings.TrimSpace(value) == "" {
+		value = " "
+	}
+
+	data := []byte(value)
+	if len(data) >= textFileSize {
+		data = data[:textFileSize-1]
+	}
+
+	padded := make([]byte, textFileSize)
+	copy(padded, data)
+	for index := len(data); index < len(padded); index++ {
+		padded[index] = ' '
+	}
+
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if _, err := file.WriteAt(padded, 0); err != nil {
+		return err
+	}
+	return file.Sync()
+}
+
 func writeVisualFrames(ctx context.Context, output io.WriteCloser, provider media.VideoMetadataProvider, initial media.VideoMetadata) error {
 	defer output.Close()
+	startedAt := time.Now()
+	frameCount := 0
+	var finalErr error
+	defer func() {
+		duration := time.Since(startedAt).Seconds()
+		avgFPS := 0.0
+		if duration > 0 {
+			avgFPS = float64(frameCount) / duration
+		}
+		if finalErr != nil && ctx.Err() == nil {
+			log.Printf("event=ffmpeg.broadcast_frames.stop frames=%d duration_ms=%d avg_fps=%.2f error=%q", frameCount, time.Since(startedAt).Milliseconds(), avgFPS, finalErr)
+			return
+		}
+		log.Printf("event=ffmpeg.broadcast_frames.stop frames=%d duration_ms=%d avg_fps=%.2f", frameCount, time.Since(startedAt).Milliseconds(), avgFPS)
+	}()
 
 	ticker := time.NewTicker(time.Second / time.Duration(videoFPS))
 	defer ticker.Stop()
@@ -467,11 +584,14 @@ func writeVisualFrames(ctx context.Context, output io.WriteCloser, provider medi
 
 		frame := renderer.Render(metadata)
 		if _, err := output.Write(frame.Pix); err != nil {
+			finalErr = err
 			return err
 		}
+		frameCount++
 
 		select {
 		case <-ctx.Done():
+			finalErr = ctx.Err()
 			return ctx.Err()
 		case <-ticker.C:
 		}
@@ -480,26 +600,30 @@ func writeVisualFrames(ctx context.Context, output io.WriteCloser, provider medi
 
 type frameRenderer struct {
 	lastArtworkPath string
-	artwork         image.Image
+	scaledArtwork   *image.RGBA
+	background      *image.RGBA
 	frame           *image.RGBA
 }
 
 func newFrameRenderer() *frameRenderer {
-	return &frameRenderer{
-		frame: image.NewRGBA(image.Rect(0, 0, frameWidth, frameHeight)),
+	renderer := &frameRenderer{
+		background: image.NewRGBA(image.Rect(0, 0, frameWidth, frameHeight)),
+		frame:      image.NewRGBA(image.Rect(0, 0, frameWidth, frameHeight)),
 	}
+	fillBackground(renderer.background)
+	drawPanel(renderer.background)
+	return renderer
 }
 
 func (r *frameRenderer) Render(metadata media.VideoMetadata) *image.RGBA {
 	if metadata.ArtworkPath != r.lastArtworkPath {
-		r.artwork = loadArtwork(metadata.ArtworkPath)
+		r.scaledArtwork = scaleArtwork(loadArtwork(metadata.ArtworkPath))
 		r.lastArtworkPath = metadata.ArtworkPath
 	}
 
-	fillBackground(r.frame)
-	drawPanel(r.frame)
-	if r.artwork != nil {
-		drawCover(r.frame, r.artwork)
+	copy(r.frame.Pix, r.background.Pix)
+	if r.scaledArtwork != nil {
+		drawCover(r.frame, r.scaledArtwork)
 	} else {
 		drawCoverPlaceholder(r.frame)
 	}
@@ -523,6 +647,15 @@ func loadArtwork(path string) image.Image {
 	return img
 }
 
+func scaleArtwork(artwork image.Image) *image.RGBA {
+	if artwork == nil {
+		return nil
+	}
+	scaled := image.NewRGBA(image.Rect(0, 0, artSize, artSize))
+	drawScaled(scaled, scaled.Bounds(), artwork)
+	return scaled
+}
+
 func fillBackground(frame *image.RGBA) {
 	for y := 0; y < frameHeight; y++ {
 		for x := 0; x < frameWidth; x++ {
@@ -540,7 +673,7 @@ func drawPanel(frame *image.RGBA) {
 
 func drawCover(frame *image.RGBA, artwork image.Image) {
 	dst := image.Rect(96, 140, 96+artSize, 140+artSize)
-	drawScaled(frame, dst, artwork)
+	drawRGBA(frame, dst.Min, artwork)
 }
 
 func drawCoverPlaceholder(frame *image.RGBA) {
@@ -605,6 +738,15 @@ func drawScaled(dst *image.RGBA, dstRect image.Rectangle, src image.Image) {
 			srcX := srcBounds.Min.X + (x-dstRect.Min.X)*srcBounds.Dx()/dstRect.Dx()
 			srcY := srcBounds.Min.Y + (y-dstRect.Min.Y)*srcBounds.Dy()/dstRect.Dy()
 			dst.Set(x, y, src.At(srcX, srcY))
+		}
+	}
+}
+
+func drawRGBA(dst *image.RGBA, point image.Point, src image.Image) {
+	srcBounds := src.Bounds()
+	for y := srcBounds.Min.Y; y < srcBounds.Max.Y; y++ {
+		for x := srcBounds.Min.X; x < srcBounds.Max.X; x++ {
+			dst.Set(point.X+x-srcBounds.Min.X, point.Y+y-srcBounds.Min.Y, src.At(x, y))
 		}
 	}
 }

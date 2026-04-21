@@ -52,6 +52,17 @@ func (s *Store) UpsertChannelState(_ context.Context, state store.ChannelState) 
 	return nil
 }
 
+func (s *Store) DeleteChannel(_ context.Context, channelID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, ok := s.channels[channelID]; !ok {
+		return errors.New("channel not found")
+	}
+	delete(s.channels, channelID)
+	return nil
+}
+
 func (s *Store) Enqueue(_ context.Context, channelID, trackID string, enqueuedAt time.Time) (domain.QueueItem, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
