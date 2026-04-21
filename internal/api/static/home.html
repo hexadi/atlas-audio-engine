@@ -218,6 +218,7 @@
 
     .library-card,
     .playlist-card,
+    .schedule-card,
     .channel-card,
     .broadcast-card {
       padding: 18px 20px;
@@ -330,6 +331,145 @@
       border-color: rgba(110, 214, 255, 0.58);
     }
 
+    .schedule-form {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .schedule-field {
+      width: 100%;
+    }
+
+    .schedule-weekdays {
+      grid-column: 1 / -1;
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border-radius: 16px;
+      background: rgba(0, 0, 0, 0.16);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .weekday-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+      gap: 8px;
+    }
+
+    .weekday-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      font-size: 14px;
+    }
+
+    .weekday-option input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+    }
+
+    .schedule-track-ids,
+    .schedule-actions {
+      grid-column: 1 / -1;
+    }
+
+    .schedule-picker {
+      grid-column: 1 / -1;
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border-radius: 16px;
+      background: rgba(0, 0, 0, 0.16);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .schedule-picker-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .schedule-picker-results,
+    .schedule-selected {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 8px;
+    }
+
+    .schedule-selected {
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    }
+
+    .schedule-chip,
+    .schedule-result {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      border-radius: 14px;
+      padding: 10px 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    .schedule-chip {
+      grid-template-columns: 1fr auto;
+    }
+
+    .schedule-chip-title,
+    .schedule-result-title {
+      font-weight: 800;
+    }
+
+    .schedule-chip-subtitle,
+    .schedule-result-subtitle {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .schedule-picker-results {
+      max-height: 260px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .schedule-picker-results .empty,
+    .schedule-selected .empty {
+      padding: 8px 0;
+    }
+
+    .schedule-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .schedule-option {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .schedule-option input {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+    }
+
     .channel-select {
       width: min(260px, 100%);
       border: 1px solid rgba(255, 255, 255, 0.1);
@@ -354,6 +494,7 @@
 
     .queue-list,
     .track-list,
+    .schedule-list,
     .library-list {
       list-style: none;
       padding: 0;
@@ -363,7 +504,8 @@
     }
 
     .queue-item,
-    .track-item {
+    .track-item,
+    .schedule-item {
       display: grid;
       grid-template-columns: auto 1fr auto;
       gap: 10px;
@@ -457,6 +599,7 @@
           <select id="channel-select" class="channel-select" aria-label="Select channel"></select>
         </div>
         <span id="channel-id" class="time"></span>
+        <span id="timezone-clock" class="time">GMT+7 --:--:--</span>
         <h2 id="next-title" class="next-title">Loading...</h2>
         <p id="next-artist" class="next-artist">Please wait</p>
       </div>
@@ -495,7 +638,7 @@
         <div class="broadcast-details">
           <div class="broadcast-stat">
             <span class="label">Video</span>
-            <strong id="broadcast-video">1280x720 @ 24fps</strong>
+            <strong id="broadcast-video">1920x1080 @ 24fps</strong>
           </div>
           <div class="broadcast-stat">
             <span class="label">Audio Feed</span>
@@ -544,6 +687,59 @@
         </ul>
       </div>
 
+      <div class="schedule-card">
+        <div class="card-header">
+          <span class="label">Schedule Blocks</span>
+          <span class="time">Times shown in GMT+7</span>
+          <button id="use-playlist-tracks-button" class="secondary-button" type="button">Use Playlist</button>
+        </div>
+        <div class="schedule-form">
+          <input id="schedule-block-id" class="filter-input schedule-field" type="text" placeholder="Block ID">
+          <input id="schedule-block-name" class="filter-input schedule-field" type="text" placeholder="Block name">
+          <div class="schedule-weekdays">
+            <span class="label">Weekdays</span>
+            <div class="weekday-grid">
+              <label class="weekday-option"><input id="schedule-weekday-0" type="checkbox" value="0"><span>Sun</span></label>
+              <label class="weekday-option"><input id="schedule-weekday-1" type="checkbox" value="1"><span>Mon</span></label>
+              <label class="weekday-option"><input id="schedule-weekday-2" type="checkbox" value="2"><span>Tue</span></label>
+              <label class="weekday-option"><input id="schedule-weekday-3" type="checkbox" value="3"><span>Wed</span></label>
+              <label class="weekday-option"><input id="schedule-weekday-4" type="checkbox" value="4"><span>Thu</span></label>
+              <label class="weekday-option"><input id="schedule-weekday-5" type="checkbox" value="5"><span>Fri</span></label>
+              <label class="weekday-option"><input id="schedule-weekday-6" type="checkbox" value="6"><span>Sat</span></label>
+            </div>
+          </div>
+          <input id="schedule-block-start-time" class="filter-input schedule-field" type="time" placeholder="Start time">
+          <input id="schedule-block-end-time" class="filter-input schedule-field" type="time" placeholder="End time">
+          <label class="schedule-option">
+            <input id="schedule-block-loop" type="checkbox">
+            <span>Loop when active</span>
+          </label>
+          <label class="schedule-option">
+            <input id="schedule-block-shuffle" type="checkbox">
+            <span>Shuffle on run</span>
+          </label>
+          <div class="schedule-picker">
+            <div class="schedule-picker-header">
+              <span class="label">Tracks in Block</span>
+              <input id="schedule-track-search" class="filter-input" type="search" placeholder="Search tracks">
+            </div>
+            <ul id="schedule-selected-tracks" class="schedule-selected">
+              <li class="empty">No selected tracks</li>
+            </ul>
+            <ul id="schedule-track-results" class="schedule-picker-results">
+              <li class="empty">Loading tracks...</li>
+            </ul>
+          </div>
+          <div class="schedule-actions">
+            <button id="save-schedule-block-button" class="secondary-button" type="button">Add Block</button>
+            <button id="clear-schedule-block-button" class="secondary-button" type="button">Clear</button>
+          </div>
+        </div>
+        <ul id="schedule-block-list" class="schedule-list">
+          <li class="empty">Loading schedule blocks...</li>
+        </ul>
+      </div>
+
       <div class="library-card">
         <div class="card-header">
           <span class="label">Library</span>
@@ -568,6 +764,7 @@
       nextArtist: document.getElementById('next-artist'),
       status: document.getElementById('status'),
       channelId: document.getElementById('channel-id'),
+      timezoneClock: document.getElementById('timezone-clock'),
       channelSelect: document.getElementById('channel-select'),
       createChannelForm: document.getElementById('create-channel-form'),
       newChannelName: document.getElementById('new-channel-name'),
@@ -581,9 +778,22 @@
       listenPlayer: document.getElementById('listen-player'),
       queueList: document.getElementById('queue-list'),
       trackList: document.getElementById('track-list'),
+      scheduleBlockList: document.getElementById('schedule-block-list'),
       libraryList: document.getElementById('library-list'),
       playlistFilter: document.getElementById('playlist-filter'),
       shufflePlaylistButton: document.getElementById('shuffle-playlist-button'),
+      usePlaylistTracksButton: document.getElementById('use-playlist-tracks-button'),
+      scheduleBlockId: document.getElementById('schedule-block-id'),
+      scheduleBlockName: document.getElementById('schedule-block-name'),
+      scheduleBlockStartTime: document.getElementById('schedule-block-start-time'),
+      scheduleBlockEndTime: document.getElementById('schedule-block-end-time'),
+      scheduleBlockLoop: document.getElementById('schedule-block-loop'),
+      scheduleBlockShuffle: document.getElementById('schedule-block-shuffle'),
+      scheduleTrackSearch: document.getElementById('schedule-track-search'),
+      scheduleSelectedTracks: document.getElementById('schedule-selected-tracks'),
+      scheduleTrackResults: document.getElementById('schedule-track-results'),
+      saveScheduleBlockButton: document.getElementById('save-schedule-block-button'),
+      clearScheduleBlockButton: document.getElementById('clear-schedule-block-button'),
       libraryFilter: document.getElementById('library-filter'),
       coverImage: document.getElementById('cover-image'),
       fallbackCover: document.getElementById('fallback-cover'),
@@ -603,11 +813,23 @@
       broadcastVideoPlayer: document.getElementById('broadcast-video-player'),
     };
 
+    const scheduleWeekdayInputs = [
+      document.getElementById('schedule-weekday-0'),
+      document.getElementById('schedule-weekday-1'),
+      document.getElementById('schedule-weekday-2'),
+      document.getElementById('schedule-weekday-3'),
+      document.getElementById('schedule-weekday-4'),
+      document.getElementById('schedule-weekday-5'),
+      document.getElementById('schedule-weekday-6'),
+    ];
+
     let snapshot = null;
     let channelId = null;
     let channels = [];
     let playlistTracks = [];
+    let scheduleBlocks = [];
     let libraryTracks = [];
+    let selectedScheduleTrackIDs = [];
     let previousPlaylistTrackIds = null;
     let statusHoldUntil = 0;
     let stateSocket = null;
@@ -619,12 +841,31 @@
       trackId: null,
     };
     let broadcastStatus = null;
+    const scheduleTimeZone = 'Asia/Bangkok';
+    const scheduleTimeZoneLabel = 'GMT+7';
+    const clockFormatter = new Intl.DateTimeFormat('en-GB', {
+      timeZone: scheduleTimeZone,
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
 
     function formatTime(ms) {
       const totalSeconds = Math.max(0, Math.floor((ms || 0) / 1000));
       const minutes = Math.floor(totalSeconds / 60);
       const seconds = totalSeconds % 60;
       return minutes + ':' + String(seconds).padStart(2, '0');
+    }
+
+    function formatClockTime(date) {
+      return clockFormatter.format(date).replace(',', '');
+    }
+
+    function updateTimezoneClock() {
+      const now = new Date();
+      elements.timezoneClock.textContent = scheduleTimeZoneLabel + ' ' + formatClockTime(now);
     }
 
     function render() {
@@ -637,6 +878,7 @@
         return;
       }
 
+      updateTimezoneClock();
       const now = snapshot.now_playing || {};
       const startedAt = now.started_at ? new Date(now.started_at).getTime() : Date.now();
       const duration = now.duration_ms || 0;
@@ -923,6 +1165,405 @@
       });
     }
 
+    function renderScheduleBlocks() {
+      elements.scheduleBlockList.innerHTML = '';
+
+      if (!Array.isArray(scheduleBlocks) || scheduleBlocks.length === 0) {
+        const item = document.createElement('li');
+        item.className = 'empty';
+        item.textContent = 'No schedule blocks';
+        elements.scheduleBlockList.appendChild(item);
+        return;
+      }
+
+      scheduleBlocks.forEach((block) => {
+        const item = document.createElement('li');
+        item.className = 'schedule-item';
+
+        const position = document.createElement('span');
+        position.className = 'queue-position';
+        position.textContent = (block.id || 'block').toString();
+
+        const text = document.createElement('span');
+        text.className = 'track-text';
+
+        const title = document.createElement('span');
+        title.className = 'track-title';
+        title.textContent = block.name || block.id || 'Unnamed block';
+
+        const artist = document.createElement('span');
+        artist.className = 'track-artist';
+        const weekdays = Array.isArray(block.weekdays) ? block.weekdays : [];
+        const flags = [
+          block.loop ? 'Loop' : 'Once',
+          block.shuffle_on_run ? 'Shuffle on run' : 'Keep order',
+        ];
+        artist.textContent = [
+          formatWeekdays(weekdays) || 'No weekdays',
+          formatScheduleBlockWindow(block),
+          String((block.track_ids || []).length) + ' tracks',
+          flags.join(', '),
+        ].join(' | ');
+
+        const actions = document.createElement('span');
+        actions.className = 'button-row';
+
+        const editButton = document.createElement('button');
+        editButton.type = 'button';
+        editButton.className = 'secondary-button';
+        editButton.textContent = 'Edit';
+        editButton.addEventListener('click', () => editScheduleBlock(block.id));
+
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'secondary-button';
+        removeButton.textContent = 'Remove';
+        removeButton.addEventListener('click', () => removeScheduleBlock(block.id));
+
+        actions.appendChild(editButton);
+        actions.appendChild(removeButton);
+        text.appendChild(title);
+        text.appendChild(artist);
+        item.appendChild(position);
+        item.appendChild(text);
+        item.appendChild(actions);
+        elements.scheduleBlockList.appendChild(item);
+      });
+    }
+
+    const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+    function pad2(value) {
+      return String(value).padStart(2, '0');
+    }
+
+    function formatTimeOfDay(minuteValue) {
+      const minutes = Math.max(0, Math.min(23 * 60 + 59, Number(minuteValue) || 0));
+      const hours = Math.floor(minutes / 60);
+      const remainder = minutes % 60;
+      return pad2(hours) + ':' + pad2(remainder);
+    }
+
+    function parseTimeOfDay(value) {
+      if (!value) {
+        return null;
+      }
+      const match = /^(\d{2}):(\d{2})$/.exec(value);
+      if (!match) {
+        return null;
+      }
+      const hours = Number(match[1]);
+      const minutes = Number(match[2]);
+      if (Number.isNaN(hours) || Number.isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+        return null;
+      }
+      return hours * 60 + minutes;
+    }
+
+    function selectedWeekdaysFromForm() {
+      return scheduleWeekdayInputs
+        .filter((input) => input.checked)
+        .map((input) => Number(input.value))
+        .filter((value) => Number.isFinite(value));
+    }
+
+    function setSelectedWeekdays(weekdays) {
+      const selected = new Set((weekdays || []).map((value) => Number(value)));
+      scheduleWeekdayInputs.forEach((input) => {
+        input.checked = selected.has(Number(input.value));
+      });
+    }
+
+    function formatWeekdays(weekdays) {
+      const values = Array.isArray(weekdays) ? weekdays.slice() : [];
+      values.sort((left, right) => left - right);
+      return values.map((weekday) => weekdayLabels[weekday] || String(weekday)).join(', ');
+    }
+
+    function formatScheduleBlockWindow(block) {
+      const start = formatTimeOfDay(block.start_minute);
+      const end = formatTimeOfDay(block.end_minute);
+      const suffix = block.end_minute <= block.start_minute ? ' (+1 day)' : '';
+      return start + ' - ' + end + suffix + ' ' + scheduleTimeZoneLabel;
+    }
+
+    function findTrackById(trackId) {
+      return (libraryTracks || []).find((track) => (track.track_id || track.id) === trackId) || null;
+    }
+
+    function renderScheduleTrackPicker() {
+      elements.scheduleSelectedTracks.innerHTML = '';
+
+      if (!Array.isArray(selectedScheduleTrackIDs) || selectedScheduleTrackIDs.length === 0) {
+        const empty = document.createElement('li');
+        empty.className = 'empty';
+        empty.textContent = 'No selected tracks';
+        elements.scheduleSelectedTracks.appendChild(empty);
+      } else {
+        selectedScheduleTrackIDs.forEach((trackId) => {
+          const track = findTrackById(trackId);
+          const chip = document.createElement('li');
+          chip.className = 'schedule-chip';
+
+          const text = document.createElement('span');
+
+          const title = document.createElement('span');
+          title.className = 'schedule-chip-title';
+          title.textContent = track ? track.title || 'Unknown track' : trackId;
+
+          const subtitle = document.createElement('span');
+          subtitle.className = 'schedule-chip-subtitle';
+          subtitle.textContent = track ? (track.artist || 'Unknown artist') : 'Missing from library';
+
+          text.appendChild(title);
+          text.appendChild(document.createElement('br'));
+          text.appendChild(subtitle);
+
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'secondary-button';
+          remove.textContent = 'Remove';
+          remove.addEventListener('click', () => removeScheduleTrack(trackId));
+
+          chip.appendChild(text);
+          chip.appendChild(remove);
+          elements.scheduleSelectedTracks.appendChild(chip);
+        });
+      }
+
+      renderScheduleTrackResults();
+    }
+
+    function renderScheduleTrackResults() {
+      elements.scheduleTrackResults.innerHTML = '';
+      const query = normalizeFilter(elements.scheduleTrackSearch.value);
+      const selectedSet = new Set(selectedScheduleTrackIDs);
+      const tracks = (libraryTracks || []).filter((track) => matchesTrack(track, query));
+
+      if (!tracks.length) {
+        const empty = document.createElement('li');
+        empty.className = 'empty';
+        empty.textContent = query ? 'No matching tracks' : 'No tracks available';
+        elements.scheduleTrackResults.appendChild(empty);
+        return;
+      }
+
+      tracks.slice(0, 24).forEach((track) => {
+        const trackId = track.track_id || track.id;
+        const row = document.createElement('li');
+        row.className = 'schedule-result';
+
+        const text = document.createElement('span');
+        const title = document.createElement('div');
+        title.className = 'schedule-result-title';
+        title.textContent = track.title || 'Unknown track';
+
+        const subtitle = document.createElement('div');
+        subtitle.className = 'schedule-result-subtitle';
+        subtitle.textContent = (track.artist || 'Unknown artist') + (track.album ? ' - ' + track.album : '');
+
+        text.appendChild(title);
+        text.appendChild(subtitle);
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'secondary-button';
+        button.textContent = selectedSet.has(trackId) ? 'Added' : 'Add';
+        button.disabled = selectedSet.has(trackId);
+        button.addEventListener('click', () => addScheduleTrack(trackId));
+
+        row.appendChild(text);
+        row.appendChild(button);
+        elements.scheduleTrackResults.appendChild(row);
+      });
+    }
+
+    function scheduleBlockPayloadFromForm() {
+      const id = elements.scheduleBlockId.value.trim();
+      const name = elements.scheduleBlockName.value.trim();
+      const weekdays = selectedWeekdaysFromForm();
+      const startMinute = parseTimeOfDay(elements.scheduleBlockStartTime.value);
+      const endMinute = parseTimeOfDay(elements.scheduleBlockEndTime.value);
+      const trackIDs = selectedScheduleTrackIDs.slice();
+      const loop = !!elements.scheduleBlockLoop.checked;
+      const shuffleOnRun = !!elements.scheduleBlockShuffle.checked;
+
+      if (!id) {
+        throw new Error('Block ID is required');
+      }
+      if (!name) {
+        throw new Error('Block name is required');
+      }
+      if (weekdays.length === 0) {
+        throw new Error('Select at least one weekday');
+      }
+      if (startMinute === null || endMinute === null) {
+        throw new Error('Start and end times are required');
+      }
+      if (startMinute === endMinute) {
+        throw new Error('Start and end times must be different');
+      }
+      if (trackIDs.length === 0) {
+        throw new Error('Block needs at least one track');
+      }
+
+      return {
+        id,
+        name,
+        weekdays,
+        start_minute: startMinute,
+        end_minute: endMinute,
+        track_ids: trackIDs,
+        loop,
+        shuffle_on_run: shuffleOnRun,
+      };
+    }
+
+    function clearScheduleBlockForm() {
+      elements.scheduleBlockId.value = '';
+      elements.scheduleBlockName.value = '';
+      elements.scheduleBlockStartTime.value = '';
+      elements.scheduleBlockEndTime.value = '';
+      setSelectedWeekdays([]);
+      elements.scheduleBlockLoop.checked = true;
+      elements.scheduleBlockShuffle.checked = false;
+      elements.scheduleTrackSearch.value = '';
+      selectedScheduleTrackIDs = [];
+      renderScheduleTrackPicker();
+      elements.saveScheduleBlockButton.textContent = 'Add Block';
+    }
+
+    function usePlaylistTrackOrderForSchedule() {
+      const trackIDs = playlistTracks.map((track) => track.track_id || track.id);
+      selectedScheduleTrackIDs = trackIDs.slice();
+      renderScheduleTrackPicker();
+      if (!elements.scheduleBlockName.value.trim()) {
+        elements.scheduleBlockName.value = 'Playlist block';
+      }
+      if (!elements.scheduleBlockStartTime.value) {
+        elements.scheduleBlockStartTime.value = '00:00';
+      }
+      if (!elements.scheduleBlockEndTime.value) {
+        elements.scheduleBlockEndTime.value = '23:59';
+      }
+      if (selectedWeekdaysFromForm().length === 0) {
+        setSelectedWeekdays([1, 2, 3, 4, 5]);
+      }
+      elements.scheduleBlockLoop.checked = true;
+    }
+
+    function editScheduleBlock(blockID) {
+      const block = scheduleBlocks.find((entry) => entry.id === blockID);
+      if (!block) {
+        return;
+      }
+
+      elements.scheduleBlockId.value = block.id || '';
+      elements.scheduleBlockName.value = block.name || '';
+      elements.scheduleBlockStartTime.value = formatTimeOfDay(block.start_minute);
+      elements.scheduleBlockEndTime.value = formatTimeOfDay(block.end_minute);
+      setSelectedWeekdays(block.weekdays || []);
+      elements.scheduleBlockLoop.checked = !!block.loop;
+      elements.scheduleBlockShuffle.checked = !!block.shuffle_on_run;
+      selectedScheduleTrackIDs = (block.track_ids || []).slice();
+      renderScheduleTrackPicker();
+      elements.saveScheduleBlockButton.textContent = 'Update Block';
+      elements.status.textContent = 'Editing schedule block ' + (block.name || block.id || '');
+      statusHoldUntil = Date.now() + 3000;
+    }
+
+    function addScheduleTrack(trackId) {
+      if (!trackId || selectedScheduleTrackIDs.includes(trackId)) {
+        return;
+      }
+      selectedScheduleTrackIDs = selectedScheduleTrackIDs.concat(trackId);
+      renderScheduleTrackPicker();
+      statusHoldUntil = Date.now() + 3000;
+      elements.status.textContent = 'Track added to schedule block.';
+    }
+
+    function removeScheduleTrack(trackId) {
+      selectedScheduleTrackIDs = selectedScheduleTrackIDs.filter((id) => id !== trackId);
+      renderScheduleTrackPicker();
+      statusHoldUntil = Date.now() + 3000;
+      elements.status.textContent = 'Track removed from schedule block.';
+    }
+
+    async function refreshScheduleBlocks() {
+      if (!channelId) {
+        return;
+      }
+
+      const response = await fetch('/channels/' + encodeURIComponent(channelId) + '/schedule-blocks');
+      if (!response.ok) {
+        throw new Error('Unable to load schedule blocks');
+      }
+      scheduleBlocks = await response.json();
+      renderScheduleBlocks();
+    }
+
+    async function saveScheduleBlocks(nextBlocks, statusMessage) {
+      if (!channelId) {
+        return;
+      }
+
+      elements.saveScheduleBlockButton.disabled = true;
+      elements.usePlaylistTracksButton.disabled = true;
+      elements.clearScheduleBlockButton.disabled = true;
+      elements.status.textContent = statusMessage || 'Saving schedule blocks...';
+      try {
+        const response = await fetch('/channels/' + encodeURIComponent(channelId) + '/schedule-blocks', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ blocks: nextBlocks }),
+        });
+        if (!response.ok) {
+          throw new Error('Unable to save schedule blocks');
+        }
+        scheduleBlocks = await response.json();
+        renderScheduleBlocks();
+        await refreshState();
+      } finally {
+        elements.saveScheduleBlockButton.disabled = false;
+        elements.usePlaylistTracksButton.disabled = false;
+        elements.clearScheduleBlockButton.disabled = false;
+      }
+    }
+
+    async function saveScheduleBlockFromForm() {
+      try {
+        const block = scheduleBlockPayloadFromForm();
+        const existingIndex = scheduleBlocks.findIndex((entry) => entry.id === block.id);
+        const nextBlocks = scheduleBlocks.slice();
+        if (existingIndex >= 0) {
+          nextBlocks.splice(existingIndex, 1, block);
+        } else {
+          nextBlocks.push(block);
+        }
+        await saveScheduleBlocks(nextBlocks, existingIndex >= 0 ? 'Schedule block updated...' : 'Schedule block added...');
+        clearScheduleBlockForm();
+        statusHoldUntil = Date.now() + 5000;
+        elements.status.textContent = existingIndex >= 0 ? 'Schedule block updated.' : 'Schedule block added.';
+      } catch (error) {
+        elements.status.textContent = error.message || 'Failed to save schedule block';
+      }
+    }
+
+    async function removeScheduleBlock(blockID) {
+      if (!blockID) {
+        return;
+      }
+
+      const nextBlocks = scheduleBlocks.filter((block) => block.id !== blockID);
+      try {
+        await saveScheduleBlocks(nextBlocks, 'Removing schedule block...');
+        statusHoldUntil = Date.now() + 5000;
+        elements.status.textContent = 'Schedule block removed.';
+      } catch (error) {
+        elements.status.textContent = error.message || 'Failed to remove schedule block';
+      }
+    }
+
     function audioURL(trackId) {
       return '/channels/' + encodeURIComponent(channelId) + '/tracks/' + encodeURIComponent(trackId) + '/audio';
     }
@@ -952,7 +1593,7 @@
       const url = broadcastStatus.recommended_url || ('/channels/' + encodeURIComponent(channelId) + '/broadcast.ts');
 
       elements.broadcastMode.textContent = broadcastStatus.mode || 'persistent broadcast';
-      elements.broadcastVideo.textContent = (video.width || 1280) + 'x' + (video.height || 720) + ' @ ' + (video.fps || 24) + 'fps';
+      elements.broadcastVideo.textContent = (video.width || 1920) + 'x' + (video.height || 1080) + ' @ ' + (video.fps || 24) + 'fps';
       elements.broadcastAudio.textContent = (audio.format || 's16le') + ' ' + (audio.sample_rate || 48000) + 'Hz ' + (audio.channels || 2) + 'ch';
       elements.broadcastStreamer.textContent = broadcastStatus.has_streamer ? 'Ready' : 'No streamer';
       elements.broadcastUrl.textContent = url;
@@ -1107,6 +1748,7 @@
     function resetChannelView() {
       snapshot = null;
       playlistTracks = [];
+      scheduleBlocks = [];
       previousPlaylistTrackIds = null;
       broadcastStatus = null;
       displayedNowPlaying = {
@@ -1124,11 +1766,15 @@
       elements.channelId.textContent = '';
       elements.queueList.innerHTML = '<li class="empty">No queued tracks</li>';
       elements.trackList.innerHTML = '<li class="empty">Loading playlist...</li>';
+      elements.scheduleBlockList.innerHTML = '<li class="empty">Loading schedule blocks...</li>';
+      selectedScheduleTrackIDs = [];
+      renderScheduleTrackPicker();
       elements.broadcastMode.textContent = 'Loading...';
       elements.broadcastStreamer.textContent = 'Checking';
       elements.broadcastUrl.textContent = '/channels/.../broadcast.ts';
       elements.openBroadcastLink.href = '#';
       hidePreview();
+      clearScheduleBlockForm();
       elements.coverImage.removeAttribute('src');
       elements.coverImage.classList.add('is-hidden');
       elements.fallbackCover.classList.remove('is-hidden');
@@ -1367,6 +2013,13 @@
       }
       libraryTracks = await libraryResponse.json();
       renderTracks();
+      renderScheduleTrackPicker();
+
+      try {
+        await refreshScheduleBlocks();
+      } catch (error) {
+        elements.status.textContent = error.message || 'Unable to load schedule blocks';
+      }
     }
 
     async function savePlaylist(trackIds) {
@@ -1635,7 +2288,11 @@
 
     elements.playlistFilter.addEventListener('input', renderTracks);
     elements.libraryFilter.addEventListener('input', renderTracks);
+    elements.scheduleTrackSearch.addEventListener('input', renderScheduleTrackPicker);
     elements.shufflePlaylistButton.addEventListener('click', shufflePlaylist);
+    elements.usePlaylistTracksButton.addEventListener('click', usePlaylistTrackOrderForSchedule);
+    elements.saveScheduleBlockButton.addEventListener('click', saveScheduleBlockFromForm);
+    elements.clearScheduleBlockButton.addEventListener('click', clearScheduleBlockForm);
     elements.createChannelForm.addEventListener('submit', createChannel);
     elements.toggleChannelButton.addEventListener('click', toggleSelectedChannel);
     elements.deleteChannelButton.addEventListener('click', deleteSelectedChannel);
@@ -1652,12 +2309,14 @@
     elements.showVisualPreviewButton.addEventListener('click', showVisualPreview);
     elements.hidePreviewButton.addEventListener('click', hidePreview);
     elements.playBroadcastVideoButton.addEventListener('click', playBroadcastVideo);
+    updateTimezoneClock();
     refreshState();
     setInterval(() => {
       if (!stateSocket || stateSocket.readyState !== WebSocket.OPEN) {
         refreshState();
       }
     }, 5000);
+    setInterval(updateTimezoneClock, 1000);
     setInterval(refreshBroadcastStatus, 30000);
     setInterval(renderPlayback, 250);
   </script>

@@ -112,8 +112,23 @@ func (s *Store) RemoveQueueItem(_ context.Context, channelID, queueItemID string
 
 func cloneState(state store.ChannelState) store.ChannelState {
 	clonedPlaylist := append([]string(nil), state.PlaylistTrackIDs...)
+	clonedBlocks := make([]domain.ScheduleBlock, 0, len(state.ScheduleBlocks))
+	for _, block := range state.ScheduleBlocks {
+		clonedBlocks = append(clonedBlocks, domain.ScheduleBlock{
+			ID:           block.ID,
+			ChannelID:    block.ChannelID,
+			Name:         block.Name,
+			Weekdays:     append([]int(nil), block.Weekdays...),
+			StartMinute:  block.StartMinute,
+			EndMinute:    block.EndMinute,
+			TrackIDs:     append([]string(nil), block.TrackIDs...),
+			Loop:         block.Loop,
+			ShuffleOnRun: block.ShuffleOnRun,
+		})
+	}
 	clonedQueue := append([]domain.QueueItem(nil), state.Queue...)
 	state.PlaylistTrackIDs = clonedPlaylist
+	state.ScheduleBlocks = clonedBlocks
 	state.Queue = clonedQueue
 	return state
 }

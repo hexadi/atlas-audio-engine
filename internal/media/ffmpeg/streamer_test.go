@@ -45,7 +45,7 @@ func TestDrawTextEscapesWindowsFontPath(t *testing.T) {
 		`C:\Users\HomePC\AppData\Local\Temp\atlas-video-123\title.txt`,
 		`C:\Users\HomePC\Downloads\FC Subject Fontset ver 2.01\Application Files ver 2.01\FCSubject-Medium.ttf`,
 		"72",
-		"x=620:y=190",
+		"x=930:y=285",
 		"fontcolor=white",
 		"8",
 	)
@@ -93,10 +93,10 @@ func TestProgressFiltersDrawAnimatedFill(t *testing.T) {
 	if !strings.Contains(source, "(15.000+T)/60.000") {
 		t.Fatalf("expected progress source to include elapsed and duration expression, got %q", source)
 	}
-	if !strings.Contains(overlay, "drawbox=x=620:y=610:w=560:h=12") {
+	if !strings.Contains(overlay, "drawbox=x=96:y=948:w=1728:h=18") {
 		t.Fatalf("expected progress base bar, got %q", overlay)
 	}
-	if !strings.Contains(overlay, "[progress_base][progress]overlay=620:610") {
+	if !strings.Contains(overlay, "[progress_base][progress]overlay=96:948") {
 		t.Fatalf("expected progress overlay, got %q", overlay)
 	}
 }
@@ -104,13 +104,19 @@ func TestProgressFiltersDrawAnimatedFill(t *testing.T) {
 func TestVideoFilterIncludesProgressWhenDurationIsKnown(t *testing.T) {
 	t.Parallel()
 
-	filter := videoFilter("title.txt", "artist.txt", "next.txt", true, "", media.VideoMetadata{
+	filter := videoFilter("title.txt", "artist.txt", "radio.txt", "schedule.txt", "next.txt", true, "", media.VideoMetadata{
 		DurationMs: 120_000,
 		ElapsedMs:  30_000,
 	})
 
-	if !strings.Contains(filter, "drawbox=x=620:y=610") {
+	if !strings.Contains(filter, "drawbox=x=96:y=948") {
 		t.Fatalf("expected video filter to include progress bar, got %q", filter)
+	}
+	if !strings.Contains(filter, "radio.txt") {
+		t.Fatalf("expected video filter to include radio overlay, got %q", filter)
+	}
+	if !strings.Contains(filter, "schedule.txt") {
+		t.Fatalf("expected video filter to include schedule overlay, got %q", filter)
 	}
 }
 

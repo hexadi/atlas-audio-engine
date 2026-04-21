@@ -169,6 +169,70 @@ func TestReplacePlaylistRejectsEmptyAndDuplicateTracks(t *testing.T) {
 	}
 }
 
+func TestScheduleBlocksTakeOverAtTrackBoundaries(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 4, 19, 12, 1, 30, 0, scheduleTimeZone)
+	service := newTestService(t, now)
+
+	blocks, err := service.ReplaceScheduleBlocks(context.Background(), "channel-1", []domain.ScheduleBlock{
+		{
+			ID:          "midday-block",
+			Name:        "Midday Block",
+			Weekdays:    []int{0},
+			StartMinute: 12*60 + 1,
+			EndMinute:   12*60 + 3,
+			TrackIDs:    []string{"track-3", "track-4"},
+			Loop:        true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("replace schedule blocks: %v", err)
+	}
+	if len(blocks) != 1 || blocks[0].ID != "midday-block" {
+		t.Fatalf("expected persisted schedule block, got %#v", blocks)
+	}
+
+	playhead, err := service.CurrentNow(context.Background(), "channel-1")
+	if err != nil {
+		t.Fatalf("current now: %v", err)
+	}
+	if playhead.TrackID != "track-3" {
+		t.Fatalf("expected schedule block track to take over after boundary, got %s", playhead.TrackID)
+	}
+
+	nextTrack, err := service.Next(context.Background(), "channel-1", playhead.TrackID)
+	if err != nil {
+		t.Fatalf("next track: %v", err)
+	}
+	if nextTrack.ID != "track-4" {
+		t.Fatalf("expected next track inside schedule block, got %s", nextTrack.ID)
+	}
+
+	loopedService := newTestService(t, time.Date(2026, 4, 19, 12, 4, 5, 0, scheduleTimeZone))
+	if _, err := loopedService.ReplaceScheduleBlocks(context.Background(), "channel-1", []domain.ScheduleBlock{
+		{
+			ID:          "loop-block",
+			Name:        "Loop Block",
+			Weekdays:    []int{0},
+			StartMinute: 12*60 + 4,
+			EndMinute:   12*60 + 7,
+			TrackIDs:    []string{"track-3", "track-4"},
+			Loop:        true,
+		},
+	}); err != nil {
+		t.Fatalf("replace looping schedule block: %v", err)
+	}
+
+	loopedPlayhead, err := loopedService.Current(context.Background(), "channel-1", time.Date(2026, 4, 19, 12, 6, 5, 0, scheduleTimeZone))
+	if err != nil {
+		t.Fatalf("looped current: %v", err)
+	}
+	if loopedPlayhead.TrackID != "track-3" {
+		t.Fatalf("expected looping block to restart at the first track, got %s", loopedPlayhead.TrackID)
+	}
+}
+
 func newTestService(t *testing.T, now time.Time) *Service {
 	t.Helper()
 

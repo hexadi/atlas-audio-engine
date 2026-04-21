@@ -168,6 +168,9 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("Now Playing")) {
 		t.Fatalf("expected home page HTML to include now playing heading")
 	}
+	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("schedule-block")) {
+		t.Fatalf("expected home page HTML to include schedule block label")
+	}
 	if !bytes.Contains(homeRecorder.Body.Bytes(), []byte("listen-player")) {
 		t.Fatalf("expected home page HTML to include audio player")
 	}
@@ -230,6 +233,12 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("Playlist Editor")) {
 		t.Fatalf("expected dashboard HTML to include playlist editor")
 	}
+	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("Schedule Blocks")) {
+		t.Fatalf("expected dashboard HTML to include schedule blocks editor")
+	}
+	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("Loop when active")) || !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("Shuffle on run")) {
+		t.Fatalf("expected dashboard HTML to include schedule block loop and shuffle controls")
+	}
 	if !bytes.Contains(dashboardRecorder.Body.Bytes(), []byte("Shuffle")) {
 		t.Fatalf("expected dashboard HTML to include playlist shuffle control")
 	}
@@ -270,6 +279,9 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	}
 	if !bytes.Contains(visualRecorder.Body.Bytes(), []byte("Atlas Visual Output")) {
 		t.Fatalf("expected visual page title")
+	}
+	if !bytes.Contains(visualRecorder.Body.Bytes(), []byte("Schedule: none")) {
+		t.Fatalf("expected visual page HTML to include schedule label")
 	}
 	if !bytes.Contains(visualRecorder.Body.Bytes(), []byte("connectSocket")) {
 		t.Fatalf("expected visual page to use live websocket state")
@@ -362,6 +374,9 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	if streamer.metadata.Title != "Track One" || streamer.metadata.Artist != "Artist" {
 		t.Fatalf("expected video metadata for current track, got %#v", streamer.metadata)
 	}
+	if streamer.metadata.RadioName != "Test Channel" {
+		t.Fatalf("expected video metadata to include radio name, got %#v", streamer.metadata)
+	}
 	if streamer.metadata.DurationMs != 1000 || streamer.metadata.ElapsedMs != 500 {
 		t.Fatalf("expected video metadata to include playhead progress, got %#v", streamer.metadata)
 	}
@@ -385,7 +400,7 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	if !strings.Contains(broadcastRecorder.Header().Get("Content-Type"), "video/MP2T") {
 		t.Fatalf("expected broadcast content type, got %q", broadcastRecorder.Header().Get("Content-Type"))
 	}
-	if broadcastRecorder.Header().Get("X-Atlas-Broadcast-Mode") != "persistent-visual-encoder" {
+	if broadcastRecorder.Header().Get("X-Atlas-Broadcast-Mode") != "persistent-text-encoder" {
 		t.Fatalf("expected persistent encoder header, got %q", broadcastRecorder.Header().Get("X-Atlas-Broadcast-Mode"))
 	}
 	if streamer.persistentAudioURL != "http://example.com/channels/channel-1/stream.pcm" {
@@ -394,8 +409,14 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	if streamer.persistentMetadata.Title != "Track One" || streamer.persistentMetadata.NextTitle != "Track Two" {
 		t.Fatalf("expected broadcast metadata snapshot, got %#v", streamer.persistentMetadata)
 	}
+	if streamer.persistentMetadata.RadioName != "Test Channel" {
+		t.Fatalf("expected broadcast metadata to include radio name, got %#v", streamer.persistentMetadata)
+	}
 	if streamer.persistentMetadata.ArtworkPath != coverPath {
 		t.Fatalf("expected broadcast metadata to include artwork path, got %#v", streamer.persistentMetadata)
+	}
+	if streamer.persistentCalls != 1 {
+		t.Fatalf("expected broadcast to use text-rendering persistent encoder, got %d calls", streamer.persistentCalls)
 	}
 
 	statusRecorder := httptest.NewRecorder()
@@ -409,10 +430,10 @@ func TestNowPlayingAndQueueFlow(t *testing.T) {
 	if err := json.Unmarshal(statusRecorder.Body.Bytes(), &status); err != nil {
 		t.Fatalf("unmarshal broadcast status: %v", err)
 	}
-	if status.Mode != "persistent-visual-encoder" {
-		t.Fatalf("expected persistent visual encoder mode, got %q", status.Mode)
+	if status.Mode != "persistent-text-encoder" {
+		t.Fatalf("expected persistent text encoder mode, got %q", status.Mode)
 	}
-	if status.Video.Width != 1280 || status.Video.Height != 720 || status.Video.FPS != 24 {
+	if status.Video.Width != 1920 || status.Video.Height != 1080 || status.Video.FPS != 24 {
 		t.Fatalf("expected broadcast video shape, got %#v", status.Video)
 	}
 	if status.Audio.Format != "s16le" || status.Audio.SampleRate != 48000 || status.Audio.Channels != 2 {

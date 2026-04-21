@@ -105,6 +105,15 @@
       overflow-wrap: anywhere;
     }
 
+    .schedule {
+      margin: 14px 0 0;
+      color: rgba(124, 255, 191, 0.92);
+      font-size: clamp(14px, 1.5vw, 26px);
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
     .next {
       margin-top: clamp(28px, 5vw, 56px);
       padding: clamp(14px, 2vw, 18px) clamp(18px, 2.5vw, 24px);
@@ -160,6 +169,11 @@
       .artist {
         font-size: clamp(24px, 3.5vw, 42px);
       }
+
+      .schedule {
+        margin-top: 12px;
+        font-size: clamp(12px, 4vw, 16px);
+      }
     }
 
     @media (max-width: 760px) {
@@ -200,6 +214,11 @@
       .artist {
         margin-top: 16px;
         font-size: clamp(20px, 7vw, 34px);
+      }
+
+      .schedule {
+        margin-top: 12px;
+        font-size: clamp(12px, 4vw, 16px);
       }
 
       .next {
@@ -248,6 +267,11 @@
         font-size: clamp(20px, 4.5vh, 34px);
       }
 
+      .schedule {
+        margin-top: 10px;
+        font-size: clamp(12px, 2.4vh, 16px);
+      }
+
       .next {
         margin-top: 20px;
         width: fit-content;
@@ -265,6 +289,7 @@
       <p class="eyebrow">Atlas Audio Engine</p>
       <h1 id="title" class="title">Loading...</h1>
       <p id="artist" class="artist">Connecting to live channel</p>
+      <p id="schedule" class="schedule">Schedule: none</p>
       <div id="next" class="next">Next: loading...</div>
     </section>
   </main>
@@ -279,12 +304,13 @@
       clock: document.getElementById('clock'),
       fill: document.getElementById('fill'),
       next: document.getElementById('next'),
+      schedule: document.getElementById('schedule'),
       title: document.getElementById('title'),
     };
 
     let channelId = null;
     let snapshot = null;
-    let displayed = { artworkUrl: null, title: null, artist: null };
+    let displayed = { artworkUrl: null, title: null, artist: null, schedule: null };
 
     function formatTime(ms) {
       const totalSeconds = Math.max(0, Math.floor((ms || 0) / 1000));
@@ -337,6 +363,12 @@
       if (displayed.artist !== artist) {
         elements.artist.textContent = artist;
         displayed.artist = artist;
+      }
+      const scheduleBlockName = now.schedule_block_name || '';
+      const scheduleText = scheduleBlockName ? ('Schedule: ' + scheduleBlockName) : 'Schedule: none';
+      if (displayed.schedule !== scheduleText) {
+        elements.schedule.textContent = scheduleText;
+        displayed.schedule = scheduleText;
       }
       if (displayed.artworkUrl !== artworkUrl) {
         if (artworkUrl) {

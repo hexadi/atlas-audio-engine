@@ -26,9 +26,9 @@ type Streamer struct {
 
 const videoFPS = 24
 const (
-	frameWidth   = 1280
-	frameHeight  = 720
-	artSize      = 440
+	frameWidth   = 1920
+	frameHeight  = 1080
+	artSize      = 880
 	textFileSize = 2048
 )
 
@@ -143,15 +143,23 @@ func (s *Streamer) StreamMPEGTS(ctx context.Context, inputPath string, startSeco
 	}
 	defer os.RemoveAll(tempDir)
 
-	titleFile, err := writeTextFile(tempDir, "title.txt", wrapText(fallback(metadata.Title, "Nothing playing"), 18))
+	titleFile, err := writeTextFile(tempDir, "title.txt", wrapText(fallback(metadata.Title, "Nothing playing"), 8))
 	if err != nil {
 		return err
 	}
-	artistFile, err := writeTextFile(tempDir, "artist.txt", wrapText(fallback(metadata.Artist, "Unknown artist"), 28))
+	artistFile, err := writeTextFile(tempDir, "artist.txt", wrapText(fallback(metadata.Artist, "Unknown artist"), 17))
 	if err != nil {
 		return err
 	}
-	nextFile, err := writeTextFile(tempDir, "next.txt", wrapText(formatNext(metadata.NextTitle, metadata.NextArtist), 42))
+	radioFile, err := writeTextFile(tempDir, "radio.txt", wrapText(radioLine(metadata.RadioName), 24))
+	if err != nil {
+		return err
+	}
+	scheduleFile, err := writeTextFile(tempDir, "schedule.txt", wrapText(scheduleLine(metadata.ScheduleBlockName), 30))
+	if err != nil {
+		return err
+	}
+	nextFile, err := writeTextFile(tempDir, "next.txt", wrapText(formatNext(metadata.NextTitle, metadata.NextArtist), 20))
 	if err != nil {
 		return err
 	}
@@ -179,11 +187,11 @@ func (s *Streamer) StreamMPEGTS(ctx context.Context, inputPath string, startSeco
 		args = append(args,
 			"-re",
 			"-f", "lavfi",
-			"-i", fmt.Sprintf("color=c=#071426:s=1280x720:r=%d", videoFPS),
+			"-i", fmt.Sprintf("color=c=#071426:s=%dx%d:r=%d", frameWidth, frameHeight, videoFPS),
 		)
 	}
 
-	filter := videoFilter(titleFile, artistFile, nextFile, metadata.ArtworkPath != "", usableFontPath(s.fontPath), metadata)
+	filter := videoFilter(titleFile, artistFile, radioFile, scheduleFile, nextFile, metadata.ArtworkPath != "", usableFontPath(s.fontPath), metadata)
 	args = append(args,
 		"-filter_complex", filter,
 		"-map", "[v]",
@@ -240,10 +248,12 @@ func (s *Streamer) StreamPersistentMPEGTS(ctx context.Context, audioURL string, 
 	defer os.RemoveAll(tempDir)
 
 	files := persistentMetadataFiles{
-		title:  filepath.Join(tempDir, "title.txt"),
-		artist: filepath.Join(tempDir, "artist.txt"),
-		next:   filepath.Join(tempDir, "next.txt"),
-		clock:  filepath.Join(tempDir, "clock.txt"),
+		title:    filepath.Join(tempDir, "title.txt"),
+		artist:   filepath.Join(tempDir, "artist.txt"),
+		radio:    filepath.Join(tempDir, "radio.txt"),
+		schedule: filepath.Join(tempDir, "schedule.txt"),
+		next:     filepath.Join(tempDir, "next.txt"),
+		clock:    filepath.Join(tempDir, "clock.txt"),
 	}
 	if err := writePersistentMetadata(ctx, metadataProvider, files); err != nil {
 		return err
@@ -265,7 +275,7 @@ func (s *Streamer) StreamPersistentMPEGTS(ctx context.Context, audioURL string, 
 		"-i", audioURL,
 		"-re",
 		"-f", "lavfi",
-		"-i", fmt.Sprintf("color=c=#071426:s=1280x720:r=%d", videoFPS),
+		"-i", fmt.Sprintf("color=c=#071426:s=%dx%d:r=%d", frameWidth, frameHeight, videoFPS),
 	}
 
 	filter := persistentVideoFilter(files, usableFontPath(s.fontPath))
@@ -325,10 +335,12 @@ func (s *Streamer) StreamPersistentVisualMPEGTS(ctx context.Context, audioURL st
 	defer os.RemoveAll(tempDir)
 
 	files := persistentMetadataFiles{
-		title:  filepath.Join(tempDir, "title.txt"),
-		artist: filepath.Join(tempDir, "artist.txt"),
-		next:   filepath.Join(tempDir, "next.txt"),
-		clock:  filepath.Join(tempDir, "clock.txt"),
+		title:    filepath.Join(tempDir, "title.txt"),
+		artist:   filepath.Join(tempDir, "artist.txt"),
+		radio:    filepath.Join(tempDir, "radio.txt"),
+		schedule: filepath.Join(tempDir, "schedule.txt"),
+		next:     filepath.Join(tempDir, "next.txt"),
+		clock:    filepath.Join(tempDir, "clock.txt"),
 	}
 	initialMetadata, err := metadataProvider(ctx)
 	if err != nil {
@@ -468,10 +480,12 @@ func writeTextFile(dir, name, content string) (string, error) {
 }
 
 type persistentMetadataFiles struct {
-	title  string
-	artist string
-	next   string
-	clock  string
+	title    string
+	artist   string
+	radio    string
+	schedule string
+	next     string
+	clock    string
 }
 
 func refreshPersistentMetadata(ctx context.Context, provider media.VideoMetadataProvider, files persistentMetadataFiles) {
@@ -507,10 +521,12 @@ func writePersistentMetadata(ctx context.Context, provider media.VideoMetadataPr
 
 func writePersistentMetadataValue(metadata media.VideoMetadata, files persistentMetadataFiles) error {
 	values := map[string]string{
-		files.title:  wrapText(fallback(metadata.Title, "Nothing playing"), 18),
-		files.artist: wrapText(fallback(metadata.Artist, "Unknown artist"), 28),
-		files.next:   wrapText(formatNext(metadata.NextTitle, metadata.NextArtist), 42),
-		files.clock:  formatClock(metadata.ElapsedMs, metadata.DurationMs),
+		files.title:    wrapText(fallback(metadata.Title, "Nothing playing"), 18),
+		files.artist:   wrapText(fallback(metadata.Artist, "Unknown artist"), 28),
+		files.radio:    wrapText(radioLine(metadata.RadioName), 24),
+		files.schedule: wrapText(scheduleLine(metadata.ScheduleBlockName), 30),
+		files.next:     wrapText(formatNext(metadata.NextTitle, metadata.NextArtist), 42),
+		files.clock:    formatClock(metadata.ElapsedMs, metadata.DurationMs),
 	}
 	for path, value := range values {
 		if err := writeStableTextFile(path, value); err != nil {
@@ -518,6 +534,19 @@ func writePersistentMetadataValue(metadata media.VideoMetadata, files persistent
 		}
 	}
 	return nil
+}
+
+func scheduleLine(name string) string {
+	name = strings.TrimSpace(name)
+	return name
+}
+
+func radioLine(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "Radio"
+	}
+	return name
 }
 
 func writeStableTextFile(path, value string) error {
@@ -668,16 +697,16 @@ func fillBackground(frame *image.RGBA) {
 }
 
 func drawPanel(frame *image.RGBA) {
-	fillRect(frame, image.Rect(64, 96, 1216, 624), color.RGBA{R: 255, G: 255, B: 255, A: 14})
+	fillRect(frame, image.Rect(100, 100, 1820, 980), color.RGBA{R: 255, G: 255, B: 255, A: 14})
 }
 
 func drawCover(frame *image.RGBA, artwork image.Image) {
-	dst := image.Rect(96, 140, 96+artSize, 140+artSize)
+	dst := image.Rect(100, 100, 100+artSize, 100+artSize)
 	drawRGBA(frame, dst.Min, artwork)
 }
 
 func drawCoverPlaceholder(frame *image.RGBA) {
-	dst := image.Rect(96, 140, 96+artSize, 140+artSize)
+	dst := image.Rect(100, 100, 100+artSize, 100+artSize)
 	for y := dst.Min.Y; y < dst.Max.Y; y++ {
 		for x := dst.Min.X; x < dst.Max.X; x++ {
 			frame.SetRGBA(x, y, color.RGBA{
@@ -691,7 +720,7 @@ func drawCoverPlaceholder(frame *image.RGBA) {
 }
 
 func drawProgress(frame *image.RGBA, elapsedMs, durationMs int64) {
-	base := image.Rect(620, 610, 1180, 622)
+	base := image.Rect(100, 978, 1820, 980)
 	fillRect(frame, base, color.RGBA{R: 255, G: 255, B: 255, A: 36})
 	if durationMs <= 0 {
 		return
@@ -837,41 +866,47 @@ func usableFontPath(fontPath string) string {
 	return fontPath
 }
 
-func videoFilter(titleFile, artistFile, nextFile string, hasArtwork bool, fontPath string, metadata media.VideoMetadata) string {
-	title := drawText(titleFile, fontPath, "72", "x=620:y=174", "fontcolor=white", "14")
-	artist := drawText(artistFile, fontPath, "40", "x=620:y=340", "fontcolor=white@0.72", "10")
-	next := drawText(nextFile, fontPath, "26", "x=620:y=464", "fontcolor=white@0.82:box=1:boxcolor=white@0.10:boxborderw=18", "8")
+func videoFilter(titleFile, artistFile, radioFile, scheduleFile, nextFile string, hasArtwork bool, fontPath string, metadata media.VideoMetadata) string {
+	radio := drawText(radioFile, fontPath, "72", "x=100:y=16", "fontcolor=white@0.92", "8")
+	schedule := drawText(scheduleFile, fontPath, "72", "x=1820-tw:y=16", "fontcolor=white@0.92", "8")
+	title := drawText(titleFile, fontPath, "144", "x=1030:y=516-th", "fontcolor=white", "14")
+	artist := drawText(artistFile, fontPath, "72", "x=1030:y=566", "fontcolor=white@0.72", "10")
+	next := drawText(nextFile, fontPath, "60", "x=1030:y=930-th", "fontcolor=white@0.82", "8")
 	progressSource, progressOverlay := progressFilters(metadata.ElapsedMs, metadata.DurationMs)
 
 	if !hasArtwork {
-		return progressSource + "[1:v]format=yuv420p," + title + "," + artist + "," + next + progressOverlay + "[v]"
+		return progressSource + "[1:v]format=yuv420p," + radio + "," + schedule + "," + title + "," + artist + "," + next + progressOverlay + "[v]"
 	}
 
 	return progressSource +
-		"[1:v]scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,eq=brightness=-0.28:saturation=1.18[bg];" +
-		"[1:v]scale=440:440:force_original_aspect_ratio=decrease,pad=440:440:(ow-iw)/2:(oh-ih)/2:color=black@0,format=rgba[art];" +
-		"[bg][art]overlay=96:140," + title + "," + artist + "," + next + progressOverlay + "[v]"
+		"[1:v]scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,eq=brightness=-0.28:saturation=1.18[bg];" +
+		"[1:v]scale=700:700:force_original_aspect_ratio=decrease,pad=700:700:(ow-iw)/2:(oh-ih)/2:color=black@0,format=rgba[art];" +
+		"[bg][art]overlay=144:202," + radio + "," + schedule + "," + title + "," + artist + "," + next + progressOverlay + "[v]"
 }
 
 func persistentVideoFilter(files persistentMetadataFiles, fontPath string) string {
-	title := drawText(files.title, fontPath, "72", "x=96:y=150", "fontcolor=white", "14", true)
-	artist := drawText(files.artist, fontPath, "40", "x=96:y=318", "fontcolor=white@0.72", "10", true)
-	next := drawText(files.next, fontPath, "26", "x=96:y=456", "fontcolor=white@0.82:box=1:boxcolor=white@0.10:boxborderw=18", "8", true)
-	clock := drawText(files.clock, fontPath, "24", "x=96:y=610", "fontcolor=white@0.70", "8", true)
+	radio := drawText(files.radio, fontPath, "72", "x=100:y=24", "fontcolor=white@0.92", "8")
+	schedule := drawText(files.schedule, fontPath, "72", "x=1820-tw:y=16", "fontcolor=white@0.92", "8")
+	title := drawText(files.title, fontPath, "144", "x=1030:y=516-th", "fontcolor=white", "14")
+	artist := drawText(files.artist, fontPath, "72", "x=1030:y=566", "fontcolor=white@0.72", "10")
+	next := drawText(files.next, fontPath, "60", "x=1030:y=930-th", "fontcolor=white@0.82", "8")
+	clock := drawText(files.clock, fontPath, "24", "x=1710:y=1018", "fontcolor=white@0.70", "8", true)
 
 	return "[1:v]format=yuv420p," +
-		"drawbox=x=0:y=0:w=1280:h=720:color=0x061126@1:t=fill," +
-		"drawbox=x=64:y=96:w=1152:h=528:color=white@0.055:t=fill," +
-		title + "," + artist + "," + next + "," + clock + "[v]"
+		"drawbox=x=0:y=0:w=1920:h=1080:color=0x061126@1:t=fill," +
+		"drawbox=x=100:y=100:w=1820:h=980:color=white@0.055:t=fill," +
+		radio + "," + schedule + "," + title + "," + artist + "," + next + "," + clock + "[v]"
 }
 
 func persistentVisualFilter(files persistentMetadataFiles, fontPath string) string {
-	title := drawText(files.title, fontPath, "72", "x=620:y=150", "fontcolor=white", "14", true)
-	artist := drawText(files.artist, fontPath, "40", "x=620:y=318", "fontcolor=white@0.72", "10", true)
-	next := drawText(files.next, fontPath, "26", "x=620:y=456", "fontcolor=white@0.82:box=1:boxcolor=white@0.10:boxborderw=18", "8", true)
-	clock := drawText(files.clock, fontPath, "24", "x=1030:y=636", "fontcolor=white@0.70", "8", true)
+	radio := drawText(files.radio, fontPath, "72", "x=100:y=24", "fontcolor=white@0.92", "8")
+	schedule := drawText(files.schedule, fontPath, "72", "x=1820-tw:y=16", "fontcolor=white@0.92", "8")
+	title := drawText(files.title, fontPath, "144", "x=1030:y=516-th", "fontcolor=white", "11")
+	artist := drawText(files.artist, fontPath, "72", "x=1030:y=566", "fontcolor=white@0.72", "14")
+	next := drawText(files.next, fontPath, "60", "x=1030:y=930-th", "fontcolor=white@0.82", "8")
+	clock := drawText(files.clock, fontPath, "24", "x=1710:y=1018", "fontcolor=white@0.70", "8", true)
 
-	return "[0:v]format=yuv420p," + title + "," + artist + "," + next + "," + clock + "[v]"
+	return "[0:v]format=yuv420p," + radio + "," + schedule + "," + title + "," + artist + "," + next + "," + clock + "[v]"
 }
 
 func progressFilters(elapsedMs, durationMs int64) (string, string) {
@@ -882,8 +917,8 @@ func progressFilters(elapsedMs, durationMs int64) (string, string) {
 	elapsedSeconds := float64(maxInt64(0, elapsedMs)) / 1000
 	durationSeconds := float64(durationMs) / 1000
 	alphaExpression := fmt.Sprintf("if(lte(X,W*min(1\\,(%.3f+T)/%.3f)),230,0)", elapsedSeconds, durationSeconds)
-	source := fmt.Sprintf("color=c=0x7cffbf:s=560x12:r=%d,format=rgba,geq=r='124':g='255':b='191':a='%s'[progress];", videoFPS, alphaExpression)
-	overlay := ",drawbox=x=620:y=610:w=560:h=12:color=white@0.14:t=fill[progress_base];[progress_base][progress]overlay=620:610:shortest=1"
+	source := fmt.Sprintf("color=c=0x7cffbf:s=1728x18:r=%d,format=rgba,geq=r='124':g='255':b='191':a='%s'[progress];", videoFPS, alphaExpression)
+	overlay := ",drawbox=x=96:y=948:w=1728:h=18:color=white@0.14:t=fill[progress_base];[progress_base][progress]overlay=96:948:shortest=1"
 	return source, overlay
 }
 

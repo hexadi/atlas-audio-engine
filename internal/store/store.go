@@ -10,6 +10,7 @@ import (
 type ChannelState struct {
 	Channel          domain.Channel
 	PlaylistTrackIDs []string
+	ScheduleBlocks   []domain.ScheduleBlock
 	Queue            []domain.QueueItem
 }
 

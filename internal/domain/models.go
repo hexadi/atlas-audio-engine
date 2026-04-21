@@ -38,13 +38,14 @@ type PlaylistEntry struct {
 }
 
 type Channel struct {
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	Enabled        bool      `json:"enabled"`
-	CreatedAt      time.Time `json:"created_at"`
-	StartedAt      time.Time `json:"started_at"`
-	CurrentTrackID string    `json:"current_track_id,omitempty"`
-	PlaylistCursor int       `json:"playlist_cursor"`
+	ID                     string    `json:"id"`
+	Name                   string    `json:"name"`
+	Enabled                bool      `json:"enabled"`
+	CreatedAt              time.Time `json:"created_at"`
+	StartedAt              time.Time `json:"started_at"`
+	CurrentTrackID         string    `json:"current_track_id,omitempty"`
+	PlaylistCursor         int       `json:"playlist_cursor"`
+	CurrentScheduleBlockID string    `json:"current_schedule_block_id,omitempty"`
 }
 
 type QueueItem struct {
@@ -69,15 +70,17 @@ type QueueEntry struct {
 }
 
 type PlayheadState struct {
-	ChannelID  string     `json:"channel_id"`
-	TrackID    string     `json:"track_id"`
-	Title      string     `json:"title"`
-	Artist     string     `json:"artist"`
-	DurationMs int64      `json:"duration_ms"`
-	ElapsedMs  int64      `json:"elapsed_ms"`
-	StartedAt  time.Time  `json:"started_at"`
-	SourceType SourceType `json:"source_type"`
-	ArtworkURL string     `json:"artwork_url,omitempty"`
+	ChannelID         string     `json:"channel_id"`
+	TrackID           string     `json:"track_id"`
+	Title             string     `json:"title"`
+	Artist            string     `json:"artist"`
+	DurationMs        int64      `json:"duration_ms"`
+	ElapsedMs         int64      `json:"elapsed_ms"`
+	StartedAt         time.Time  `json:"started_at"`
+	SourceType        SourceType `json:"source_type"`
+	ArtworkURL        string     `json:"artwork_url,omitempty"`
+	ScheduleBlockName string     `json:"schedule_block_name,omitempty"`
+	ScheduleBlockID   string     `json:"schedule_block_id,omitempty"`
 }
 
 type NextTrack struct {
@@ -91,16 +94,21 @@ type NextTrack struct {
 }
 
 type ChannelStateSnapshot struct {
-	ChannelID  string        `json:"channel_id"`
-	NowPlaying PlayheadState `json:"now_playing"`
-	Queue      []QueueEntry  `json:"queue"`
-	NextTrack  *NextTrack    `json:"next_track,omitempty"`
+	ChannelID   string        `json:"channel_id"`
+	ChannelName string        `json:"channel_name,omitempty"`
+	NowPlaying  PlayheadState `json:"now_playing"`
+	Queue       []QueueEntry  `json:"queue"`
+	NextTrack   *NextTrack    `json:"next_track,omitempty"`
 }
 
 type ScheduleBlock struct {
-	ID        string    `json:"id"`
-	ChannelID string    `json:"channel_id"`
-	Name      string    `json:"name"`
-	StartsAt  time.Time `json:"starts_at"`
-	EndsAt    time.Time `json:"ends_at"`
+	ID           string   `json:"id"`
+	ChannelID    string   `json:"channel_id"`
+	Name         string   `json:"name"`
+	Weekdays     []int    `json:"weekdays"`
+	StartMinute  int      `json:"start_minute"`
+	EndMinute    int      `json:"end_minute"`
+	TrackIDs     []string `json:"track_ids"`
+	Loop         bool     `json:"loop"`
+	ShuffleOnRun bool     `json:"shuffle_on_run"`
 }

@@ -71,6 +71,8 @@ If a repo-local `.env` file exists, the app loads it automatically before applyi
 - `GET /channels/:id/playlist`
 - `PUT /channels/:id/playlist`
 - `POST /channels/:id/playlist/shuffle`
+- `GET /channels/:id/schedule-blocks`
+- `PUT /channels/:id/schedule-blocks`
 - `GET /channels/:id/tracks`
 - `GET /channels/:id/tracks/:trackId/audio`
 - `GET /channels/:id/stream.m3u8`
@@ -147,6 +149,7 @@ Using `testdata/media` keeps Go tooling happy; a repo-root `media/` folder can i
 
 - Add more source adapters
 - Extend scheduler rules beyond a single seeded playlist
+- Add richer schedule editor controls for block creation and editing
 - Add broadcast output and visual composition
 - Add live operator workflows and richer playback controls
 

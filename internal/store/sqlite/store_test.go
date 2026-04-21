@@ -24,15 +24,29 @@ func TestChannelStatePersistsAcrossSQLiteReopen(t *testing.T) {
 
 	state := store.ChannelState{
 		Channel: domain.Channel{
-			ID:             "channel-1",
-			Name:           "SQLite Channel",
-			Enabled:        true,
-			CreatedAt:      now.Add(-time.Hour),
-			StartedAt:      now,
-			CurrentTrackID: "track-2",
-			PlaylistCursor: 1,
+			ID:                     "channel-1",
+			Name:                   "SQLite Channel",
+			Enabled:                true,
+			CreatedAt:              now.Add(-time.Hour),
+			StartedAt:              now,
+			CurrentTrackID:         "track-2",
+			PlaylistCursor:         1,
+			CurrentScheduleBlockID: "midday-block",
 		},
 		PlaylistTrackIDs: []string{"track-1", "track-2", "track-3"},
+		ScheduleBlocks: []domain.ScheduleBlock{
+			{
+				ID:           "midday-block",
+				ChannelID:    "channel-1",
+				Name:         "Midday Block",
+				Weekdays:     []int{1, 3, 5},
+				StartMinute:  600,
+				EndMinute:    660,
+				TrackIDs:     []string{"track-3", "track-2"},
+				Loop:         true,
+				ShuffleOnRun: true,
+			},
+		},
 		Queue: []domain.QueueItem{
 			{ID: "queue-1", ChannelID: "channel-1", TrackID: "track-4", EnqueuedAt: now.Add(time.Second)},
 		},
@@ -65,6 +79,12 @@ func TestChannelStatePersistsAcrossSQLiteReopen(t *testing.T) {
 	}
 	if len(got.Queue) != 1 || got.Queue[0].TrackID != "track-4" {
 		t.Fatalf("expected queue to persist, got %#v", got.Queue)
+	}
+	if len(got.ScheduleBlocks) != 1 || got.ScheduleBlocks[0].ID != "midday-block" || len(got.ScheduleBlocks[0].TrackIDs) != 2 {
+		t.Fatalf("expected schedule block to persist, got %#v", got.ScheduleBlocks)
+	}
+	if !got.ScheduleBlocks[0].Loop || !got.ScheduleBlocks[0].ShuffleOnRun {
+		t.Fatalf("expected schedule block flags to persist, got %#v", got.ScheduleBlocks[0])
 	}
 }
 

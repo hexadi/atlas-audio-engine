@@ -11,13 +11,15 @@ type AudioStreamer interface {
 }
 
 type VideoMetadata struct {
-	Title       string
-	Artist      string
-	NextTitle   string
-	NextArtist  string
-	DurationMs  int64
-	ElapsedMs   int64
-	ArtworkPath string
+	Title             string
+	Artist            string
+	NextTitle         string
+	NextArtist        string
+	DurationMs        int64
+	ElapsedMs         int64
+	ArtworkPath       string
+	RadioName         string
+	ScheduleBlockName string
 }
 
 type VideoMetadataProvider func(ctx context.Context) (VideoMetadata, error)

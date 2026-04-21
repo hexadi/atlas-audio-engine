@@ -17,6 +17,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"golang.org/x/net/websocket"
 
+	"github.com/homepc/atlas-audio-engine/internal/domain"
 	"github.com/homepc/atlas-audio-engine/internal/media"
 	"github.com/homepc/atlas-audio-engine/internal/scheduler"
 )
@@ -47,6 +48,21 @@ type moveQueueItemRequest struct {
 
 type replacePlaylistRequest struct {
 	TrackIDs []string `json:"track_ids"`
+}
+
+type replaceScheduleBlocksRequest struct {
+	Blocks []scheduleBlockRequest `json:"blocks"`
+}
+
+type scheduleBlockRequest struct {
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	Weekdays     []int    `json:"weekdays"`
+	StartMinute  int      `json:"start_minute"`
+	EndMinute    int      `json:"end_minute"`
+	TrackIDs     []string `json:"track_ids"`
+	Loop         bool     `json:"loop"`
+	ShuffleOnRun bool     `json:"shuffle_on_run"`
 }
 
 type broadcastStatusResponse struct {
@@ -216,6 +232,41 @@ func (h *Handler) ShufflePlaylist(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 	return c.JSON(http.StatusOK, playlist)
+}
+
+func (h *Handler) ScheduleBlocks(c echo.Context) error {
+	blocks, err := h.service.ScheduleBlocks(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, blocks)
+}
+
+func (h *Handler) ReplaceScheduleBlocks(c echo.Context) error {
+	var request replaceScheduleBlocksRequest
+	if err := c.Bind(&request); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+
+	blocks := make([]domain.ScheduleBlock, 0, len(request.Blocks))
+	for _, block := range request.Blocks {
+		blocks = append(blocks, domain.ScheduleBlock{
+			ID:           block.ID,
+			Name:         block.Name,
+			Weekdays:     block.Weekdays,
+			StartMinute:  block.StartMinute,
+			EndMinute:    block.EndMinute,
+			TrackIDs:     block.TrackIDs,
+			Loop:         block.Loop,
+			ShuffleOnRun: block.ShuffleOnRun,
+		})
+	}
+
+	scheduleBlocks, err := h.service.ReplaceScheduleBlocks(c.Request().Context(), c.Param("id"), blocks)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
+	return c.JSON(http.StatusOK, scheduleBlocks)
 }
 
 func (h *Handler) State(c echo.Context) error {
@@ -500,10 +551,12 @@ func (h *Handler) StreamVideo(c echo.Context) error {
 		}
 
 		metadata := media.VideoMetadata{
-			Title:      playhead.Title,
-			Artist:     playhead.Artist,
-			DurationMs: playhead.DurationMs,
-			ElapsedMs:  int64(startSeconds * 1000),
+			Title:             playhead.Title,
+			Artist:            playhead.Artist,
+			DurationMs:        playhead.DurationMs,
+			ElapsedMs:         int64(startSeconds * 1000),
+			RadioName:         state.ChannelName,
+			ScheduleBlockName: playhead.ScheduleBlockName,
 		}
 		if state.NextTrack != nil {
 			metadata.NextTitle = state.NextTrack.Title
@@ -559,21 +612,23 @@ func (h *Handler) BroadcastVideo(c echo.Context) error {
 	c.Response().Header().Set(echo.HeaderContentType, "video/MP2T")
 	c.Response().Header().Set("Cache-Control", "no-store")
 	c.Response().Header().Set("X-Accel-Buffering", "no")
-	c.Response().Header().Set("X-Atlas-Broadcast-Mode", "persistent-visual-encoder")
+	c.Response().Header().Set("X-Atlas-Broadcast-Mode", "persistent-text-encoder")
 	c.Response().WriteHeader(http.StatusOK)
 
 	audioURL := streamPCMURL(c, channelID)
 	metadataProvider := func(ctx context.Context) (media.VideoMetadata, error) {
-		state, err := h.service.State(ctx, channelID)
+		state, err := h.service.StateSnapshot(ctx, channelID)
 		if err != nil {
 			return media.VideoMetadata{}, err
 		}
 		playhead := state.NowPlaying
 		metadata := media.VideoMetadata{
-			Title:      playhead.Title,
-			Artist:     playhead.Artist,
-			DurationMs: playhead.DurationMs,
-			ElapsedMs:  playhead.ElapsedMs,
+			Title:             playhead.Title,
+			Artist:            playhead.Artist,
+			DurationMs:        playhead.DurationMs,
+			ElapsedMs:         playhead.ElapsedMs,
+			RadioName:         state.ChannelName,
+			ScheduleBlockName: playhead.ScheduleBlockName,
 		}
 		if state.NextTrack != nil {
 			metadata.NextTitle = state.NextTrack.Title
@@ -586,7 +641,7 @@ func (h *Handler) BroadcastVideo(c echo.Context) error {
 	}
 
 	log.Printf("event=stream.broadcast.start channel_id=%s audio_url=%s", channelID, audioURL)
-	err := h.streamer.StreamPersistentVisualMPEGTS(c.Request().Context(), audioURL, metadataProvider, c.Response())
+	err := h.streamer.StreamPersistentMPEGTS(c.Request().Context(), audioURL, metadataProvider, c.Response())
 	if err != nil && c.Request().Context().Err() == nil {
 		log.Printf("event=stream.broadcast.error channel_id=%s error=%q", channelID, err)
 	}
@@ -595,16 +650,18 @@ func (h *Handler) BroadcastVideo(c echo.Context) error {
 
 func (h *Handler) BroadcastStatus(c echo.Context) error {
 	channelID := c.Param("id")
-	state, err := h.service.State(c.Request().Context(), channelID)
+	state, err := h.service.StateSnapshot(c.Request().Context(), channelID)
 	if err != nil {
 		return err
 	}
 
 	metadata := media.VideoMetadata{
-		Title:      state.NowPlaying.Title,
-		Artist:     state.NowPlaying.Artist,
-		DurationMs: state.NowPlaying.DurationMs,
-		ElapsedMs:  state.NowPlaying.ElapsedMs,
+		Title:             state.NowPlaying.Title,
+		Artist:            state.NowPlaying.Artist,
+		DurationMs:        state.NowPlaying.DurationMs,
+		ElapsedMs:         state.NowPlaying.ElapsedMs,
+		RadioName:         state.ChannelName,
+		ScheduleBlockName: state.NowPlaying.ScheduleBlockName,
 	}
 	if state.NextTrack != nil {
 		metadata.NextTitle = state.NextTrack.Title
@@ -623,8 +680,8 @@ func (h *Handler) BroadcastStatus(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, broadcastStatusResponse{
 		ChannelID:      channelID,
-		Mode:           "persistent-visual-encoder",
-		Video:          broadcastVideoStatus{Width: 1280, Height: 720, FPS: 24},
+		Mode:           "persistent-text-encoder",
+		Video:          broadcastVideoStatus{Width: 1920, Height: 1080, FPS: 24},
 		Audio:          broadcastAudioStatus{Format: "s16le", SampleRate: 48000, Channels: 2},
 		URLs:           urls,
 		NowPlaying:     metadata,

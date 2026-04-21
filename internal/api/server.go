@@ -57,6 +57,8 @@ func NewServerWithOptions(service *scheduler.Service, streamer media.Streamer, o
 	e.GET("/channels/:id/playlist", handler.Playlist)
 	e.PUT("/channels/:id/playlist", handler.ReplacePlaylist)
 	e.POST("/channels/:id/playlist/shuffle", handler.ShufflePlaylist)
+	e.GET("/channels/:id/schedule-blocks", handler.ScheduleBlocks)
+	e.PUT("/channels/:id/schedule-blocks", handler.ReplaceScheduleBlocks)
 	e.GET("/channels/:id/tracks/:trackId/audio", handler.Audio)
 	e.GET("/channels/:id/stream.m3u8", handler.HLSManifest)
 	e.GET("/channels/:id/stream.mp3", handler.StreamMP3)

@@ -107,6 +107,16 @@
       text-align: center;
     }
 
+    .schedule {
+      margin: 12px 0 0;
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
     .progress-row {
       display: flex;
       justify-content: space-between;
@@ -430,6 +440,7 @@
     <p class="eyebrow">Now Playing</p>
     <h1 id="now-title" class="title">Loading...</h1>
     <p id="now-artist" class="artist">Connecting to channel</p>
+    <p id="schedule-block" class="schedule">Schedule: none</p>
 
     <div class="progress-row">
       <span>Progress</span>
@@ -465,6 +476,7 @@
       fill: document.getElementById('progress-fill'),
       nextTitle: document.getElementById('next-title'),
       nextArtist: document.getElementById('next-artist'),
+      scheduleBlock: document.getElementById('schedule-block'),
       playButton: document.getElementById('play-button'),
       stopButton: document.getElementById('stop-button'),
       channelSelect: document.getElementById('channel-select'),
@@ -648,6 +660,12 @@
       if (displayed.artist !== artist) {
         elements.artist.textContent = artist;
         displayed.artist = artist;
+      }
+      const scheduleBlockName = now.schedule_block_name || '';
+      const scheduleText = scheduleBlockName ? ('Schedule: ' + scheduleBlockName) : 'Schedule: none';
+      if (displayed.scheduleBlock !== scheduleText) {
+        elements.scheduleBlock.textContent = scheduleText;
+        displayed.scheduleBlock = scheduleText;
       }
       if (displayed.artworkUrl !== artworkUrl) {
         if (artworkUrl) {
